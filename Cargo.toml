@@ -1,0 +1,19 @@
+[package]
+name = "astral-core-tests"
+version = "0.1.0"
+edition = "2024"
+
+[workspace]
+
+[lib]
+name = "astral_core"
+path = "mixins/astral_cruiser/core.rs"
+
+[dependencies]
+bytemuck = { version = "1.24", features = ["derive"] }
+glam = "0.30"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "=1.0.151"
+
+[dev-dependencies]
+naga = { version = "=30.0.1", features = ["wgsl-in"] }
