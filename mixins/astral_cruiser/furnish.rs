@@ -1,7 +1,7 @@
 // Everything standing in the rooms, room by room. A prop is solid when a walker
 // should bump into it; rails, pipes and lamps are only seen, and a rail's stop is
 // a hidden barrier so the eye passes between its bars.
-use super::astral_layout::{Face, Material, Material::*, Prop, Room, RoomKind, Shape};
+use super::astral_layout::{Face, Material, Material::*, Prop, Room, RoomKind, Shape, UPPER_DECK};
 use glam::DVec3;
 
 const DECK: f64 = -4.0;
@@ -65,6 +65,8 @@ fn chair(x: f64, z: f64) -> Vec<Prop> {
 
 fn bridge() -> Vec<Prop> {
     let mut props = chair(0.0, 50.0);
+    // The captain sits behind and to the pilot's left, clear of the helm exit.
+    props.extend(chair(3.5, 47.0));
     // The helm: the desk wraps round the pilot's chair.
     props.extend([
         desk([-3.2, DECK, 51.2], [3.2, -2.7, 52.8], Face::Back, -3.3),
@@ -107,6 +109,12 @@ fn bridge() -> Vec<Prop> {
         side.extend(seat);
     }
     props.extend(twinned(side));
+    for z in [42.0, 46.0, 50.0] {
+        props.extend(twinned(vec![
+            decor([8.7, -0.2, z], [8.95, 0.7, z + 1.5], Screen),
+            decor([4.0, DECK, z], [4.15, -3.96, z + 2.0], Lamp),
+        ]));
+    }
     props
 }
 
@@ -118,6 +126,7 @@ fn corridors() -> Vec<Prop> {
         let sides = vec![
             decor([1.95, 1.05, from], [2.22, 1.32, to], Pipe),
             decor([1.95, 1.45, from], [2.22, 1.72, to], Pipe),
+            decor([1.85, 0.92, from], [2.3, 1.03, to], Metal),
             decor([2.3, -4.0, from], [2.5, -3.72, to], Metal),
             decor([1.7, DECK, from], [1.75, -3.97, to], Hazard),
         ];
@@ -155,6 +164,7 @@ fn corridors() -> Vec<Prop> {
         props.extend(twinned(vec![
             decor([2.4, -3.72, z], [2.5, 0.2, z + 2.0], Metal),
             decor([2.36, -1.2, z + 0.4], [2.4, 0.0, z + 1.6], Screen),
+            decor([2.28, 0.3, z + 0.2], [2.36, 0.7, z + 1.8], Holo),
         ]));
     }
     props
@@ -191,6 +201,7 @@ fn quarters() -> Vec<Prop> {
             solid([9.3, DECK, z + 1.8], [9.42, -1.5, z + 1.9], Rail),
             decor([9.42, -1.72, z + 0.1], [9.5, -1.58, z + 1.8], Rail),
             decor([11.86, -3.0, z + 0.2], [11.9, -2.3, z + 1.7], Screen),
+            decor([11.7, -1.3, z + 0.2], [11.85, -1.1, z + 1.7], Lamp),
         ]);
     }
     props
@@ -206,10 +217,12 @@ fn mess() -> Vec<Prop> {
         decor([-8.6, -2.9, 36.7], [-7.4, -2.86, 37.7], Lamp),
         decor([-6.8, 0.2, 37.2], [-4.0, 1.9, 38.0], Metal),
         decor([-6.6, -0.2, 37.5], [-4.2, 0.2, 37.8], Lamp),
-        decor([-4.0, -4.0, 24.0], [-3.0, 2.0, 24.3], Metal),
+        decor([-12.0, -4.0, 24.0], [-11.0, 2.0, 24.3], Metal),
         decor([-10.0, 1.8, 28.8], [-5.0, 1.98, 29.1], Lamp),
         decor([-10.0, 1.8, 32.8], [-5.0, 1.98, 33.1], Lamp),
         decor([-8.4, 1.0, 24.02], [-4.6, 0.6 + 1.0, 24.1], Screen),
+        decor([-11.9, -1.0, 29.5], [-11.8, 0.8, 32.0], Screen),
+        decor([-11.6, 0.8, 36.7], [-9.0, 1.0, 37.7], Lamp),
     ];
     // Tables with a bench down each side.
     for z in [25.2, 33.0] {
@@ -239,7 +252,7 @@ fn gun_bay() -> Vec<Prop> {
         // Fire control at the bay's far end, clear of the aisle by the door.
         desk([5.5, DECK, 18.2], [12.5, -2.7, 19.8], Face::Back, -3.3),
         decor([5.5, -2.7, 19.5], [12.5, -1.0, 19.8], Screen),
-        decor([3.1, -2.2, 19.9], [5.0, 0.6, 19.98], Screen),
+        decor([13.2, -2.2, 19.9], [15.8, 0.6, 19.98], Screen),
         decor([15.9, -2.2, 9.0], [15.98, 0.6, 13.0], Screen),
         decor([4.0, -3.98, 8.5], [15.0, -3.96, 8.65], Hazard),
         decor([4.0, -3.98, 13.35], [15.0, -3.96, 13.5], Hazard),
@@ -266,6 +279,11 @@ fn gun_bay() -> Vec<Prop> {
         }
         props.push(solid([x - 1.5, DECK, 14.15], [x - 1.42, 0.0, 15.65], Rail));
         props.push(solid([x + 1.42, DECK, 14.15], [x + 1.5, 0.0, 15.65], Rail));
+        // Feed rollers, control lamps and the overhead link to the battery.
+        for z in [6.5, 8.5, 10.5, 12.5] {
+            props.push(decor([x - 0.7, 1.3, z], [x + 0.7, 1.5, z + 0.3], Hazard));
+        }
+        props.push(decor([x - 0.6, 0.7, 18.3], [x + 0.6, 1.0, 19.7], Lamp));
     }
     props
 }
@@ -290,6 +308,7 @@ fn sickbay() -> Vec<Prop> {
             solid([x - 0.85, -3.3, -6.92], [x + 0.85, -3.05, -3.33], Cloth),
             decor([x - 0.6, -3.05, -6.75], [x + 0.6, -2.9, -6.0], Cloth),
             decor([x - 0.8, -1.8, -6.97], [x + 0.8, -0.4, -6.9], Screen),
+            decor([x - 0.9, 0.4, -6.9], [x + 0.9, 0.6, -3.4], Lamp),
             pillar(x + 1.2, -6.2, 0.05, [DECK, -1.4], Rail),
             decor([x + 1.05, -1.5, -6.3], [x + 1.35, -1.1, -6.1], Holo),
         ]);
@@ -316,6 +335,9 @@ fn airlock() -> Vec<Prop> {
         decor([14.52, -0.5, -5.3], [14.58, -0.3, -1.7], Lamp),
         decor([15.0, 1.76, -3.7], [19.5, 1.98, -3.3], Lamp),
         decor([19.92, -2.2, -6.6], [20.0, -0.6, -5.2], Screen),
+        decor([14.6, -1.7, -1.0], [14.7, -0.3, 0.1], Screen),
+        decor([19.8, -3.98, -4.4], [19.95, -3.94, -1.6], Lamp),
+        decor([15.0, DECK, -3.8], [15.7, -3.96, -3.2], Hazard),
     ];
     // Suits racked along the far wall.
     for i in 0..4 {
@@ -334,11 +356,11 @@ fn airlock() -> Vec<Prop> {
 /// a core on each side and stairs down.
 fn reactor() -> Vec<Prop> {
     const PIT: f64 = -9.0;
-    const TOP: f64 = 4.0;
+    const TOP: f64 = 8.0;
     let mut props = vec![
         solid([-2.5, -4.5, -30.0], [2.5, DECK, -8.0], Grate),
         decor([-0.08, DECK, -30.0], [0.08, -3.97, -8.0], Lamp),
-        decor([-20.0, 3.4, -19.4], [20.0, 3.9, -18.6], Metal),
+        decor([-20.0, 8.4, -19.4], [20.0, 8.9, -18.6], Metal),
         decor([-20.0, 2.6, -28.0], [20.0, 2.9, -27.7], Pipe),
         decor([-20.0, 2.6, -10.3], [20.0, 2.9, -10.0], Pipe),
     ];
@@ -351,9 +373,12 @@ fn reactor() -> Vec<Prop> {
         glow(13.0, -19.0, 4.7, [-5.4, -4.9], Metal),
         glow(13.0, -19.0, 4.4, [-5.5, -5.4], Lamp),
         glow(13.0, -19.0, 5.0, [3.2, 3.8], Metal),
+        glow(13.0, -19.0, 4.7, [7.2, 7.7], Metal),
+        glow(13.0, -19.0, 4.4, [7.1, 7.2], Lamp),
+        decor([12.8, 7.7, -28.0], [13.2, 8.3, -19.0], Pipe),
         // Conduits from the core's head to the catwalk's roof.
         decor([2.0, 2.0, -19.5], [9.0, 2.6, -18.5], Pipe),
-        decor([2.0, 1.2, -21.5], [9.5, 1.5, -21.2], Pipe),
+        decor([5.6, 1.2, -21.5], [9.5, 1.5, -21.2], Pipe),
         decor([2.0, 1.2, -16.8], [9.5, 1.5, -16.5], Pipe),
         // The catwalk's rail, with the top of the stairs left open.
         barrier([2.35, DECK, -30.0], [2.5, -2.7, -13.0]),
@@ -385,10 +410,13 @@ fn reactor() -> Vec<Prop> {
     }
     side.extend([
         decor([2.5, -3.55, -13.04], [12.5, -3.5, -12.98], Hazard),
-        barrier([3.0, -8.5, -13.15], [12.0, -2.7, -13.0]),
+        // The near end opens for the flight up to the gallery.
+        barrier([5.6, -8.5, -13.15], [12.0, -2.7, -13.0]),
         barrier([3.0, -8.5, -10.0], [12.0, -2.7, -9.85]),
     ]);
     props.extend(twinned(side));
+    // Only the left flight needs the break in the pit rail.
+    props.push(barrier([-5.6, -8.5, -13.15], [-3.0, -2.7, -13.0]));
     props
 }
 
@@ -403,7 +431,7 @@ fn stack(x: f64, z: f64, wide: f64, deep: f64, layers: u32) -> Vec<Prop> {
         .collect()
 }
 
-fn cargo() -> Vec<Prop> {
+fn hangar() -> Vec<Prop> {
     let mut props = vec![
         // The bay door in the rear wall, its frame and warning stripes.
         decor([-13.0, DECK, -63.98], [13.0, 3.0, -63.9], Metal),
@@ -423,15 +451,206 @@ fn cargo() -> Vec<Prop> {
         decor([8.0, 3.72, -62.0], [8.3, 3.98, -46.0], Lamp),
         decor([18.0, 3.72, -62.0], [18.3, 3.98, -46.0], Lamp),
     ];
-    // Heights of the stacks, so that no two neighbours look alike.
-    const RISE: [[u32; 4]; 3] = [[3, 2, 4, 1], [2, 4, 1, 3], [4, 1, 3, 2]];
-    for (row, z) in [-62.5, -56.5, -50.5].into_iter().enumerate() {
-        for (column, x) in [4.5, 10.5, 15.5, 20.5].into_iter().enumerate() {
-            let wide = if column == 0 { 5.0 } else { 3.8 };
-            side.extend(stack(x, z, wide, 4.0, RISE[row][column]));
+    // The stores now line the walls, leaving the central service aisle open.
+    for z in [-62.0, -56.0, -50.0] {
+        side.extend(stack(21.0, z, 3.8, 3.5, 2));
+        for y in [-3.8, -1.5, 0.8] {
+            side.push(solid([20.7, y, z - 0.1], [25.0, y + 0.15, z + 3.8], Metal));
         }
+        side.push(solid([24.8, DECK, z], [25.0, 3.0, z + 0.2], Rail));
+        side.push(decor([20.6, -2.8, z], [20.7, -1.8, z + 2.0], Screen));
     }
     props.extend(twinned(side));
+    // A parked shuttle: hull, swept wings, cockpit, landing feet and two engines.
+    props.extend([
+        solid([7.0, -3.0, -60.0], [16.0, -0.7, -49.0], Metal),
+        make([8.0, -0.7, -57.0], [15.0, 1.1, -49.0], Metal,
+            Shape::Slope { face: Face::Front, low: -0.5 }, true),
+        decor([9.0, -0.2, -51.0], [14.0, 0.9, -49.3], Glass),
+        solid([3.5, -2.3, -58.0], [19.5, -1.9, -53.0], Metal),
+        decor([7.5, -2.6, -60.3], [10.0, -0.7, -60.0], Engine),
+        decor([13.0, -2.6, -60.3], [15.5, -0.7, -60.0], Engine),
+        solid([8.0, DECK, -58.5], [9.0, -3.0, -57.5], Rail),
+        solid([14.0, DECK, -58.5], [15.0, -3.0, -57.5], Rail),
+        solid([11.0, DECK, -50.5], [12.0, -3.0, -49.5], Rail),
+        decor([5.0, -3.98, -62.0], [18.0, -3.96, -61.7], Hazard),
+        decor([5.0, -3.98, -48.0], [18.0, -3.96, -47.7], Hazard),
+        decor([4.7, -3.98, -62.0], [5.0, -3.96, -47.7], Hazard),
+        decor([18.0, -3.98, -62.0], [18.3, -3.96, -47.7], Hazard),
+    ]);
+    // Tie-downs and approach lights alongside the closed belly ramp.
+    for z in [-60.0, -56.0, -52.0, -48.0] {
+        props.extend([
+            decor([-8.2, DECK, z], [-7.8, -3.95, z + 0.4], Lamp),
+            decor([1.5, DECK, z], [1.9, -3.95, z + 0.4], Lamp),
+        ]);
+    }
+    props
+}
+
+/// A lower-deck chair reused at another floor height.
+fn raised_chair(x: f64, y: f64, z: f64) -> Vec<Prop> {
+    chair(x, z).into_iter().map(|mut p| {
+        p.min.y += y - DECK;
+        p.max.y += y - DECK;
+        p
+    }).collect()
+}
+
+fn captain() -> Vec<Prop> {
+    let mut props = raised_chair(6.0, UPPER_DECK, 27.0);
+    props.extend([
+        solid([3.4, 3.0, 28.0], [8.5, 4.0, 29.8], Console),
+        decor([4.0, 4.0, 29.4], [7.0, 5.6, 29.6], Screen),
+        solid([9.0, 3.0, 17.0], [11.8, 3.7, 21.0], Metal),
+        solid([9.1, 3.7, 17.1], [11.7, 4.0, 20.9], Cloth),
+        decor([9.4, 4.0, 17.3], [11.4, 4.2, 18.0], Cloth),
+        decor([3.5, 3.0, 18.0], [8.0, 3.03, 25.0], Cloth),
+        solid([3.1, 3.0, 16.1], [6.5, 7.5, 17.0], Metal),
+        decor([3.5, 5.0, 17.0], [6.0, 6.5, 17.05], Screen),
+        pillar(10.0, 26.0, 0.6, [3.0, 4.0], Console),
+        glow(10.0, 26.0, 0.7, [4.0, 5.2], Holo),
+        decor([4.0, 8.7, 18.0], [11.0, 8.9, 18.3], Lamp),
+        decor([4.0, 8.7, 27.0], [11.0, 8.9, 27.3], Lamp),
+    ]);
+    props
+}
+
+fn arsenal() -> Vec<Prop> {
+    let mut props = vec![
+        decor([3.8, 8.7, -5.0], [11.2, 8.9, -4.7], Lamp),
+        decor([3.8, 8.7, 12.8], [11.2, 8.9, 13.1], Lamp),
+        decor([3.1, 5.0, 13.8], [11.8, 7.2, 13.9], Screen),
+        decor([6.5, 3.0, -5.5], [6.6, 3.03, 13.5], Hazard),
+        decor([8.4, 3.0, -5.5], [8.5, 3.03, 13.5], Hazard),
+    ];
+    // Eighteen strike models, one on each illuminated display pedestal.
+    for row in 0..9 {
+        let z = -4.0 + f64::from(row) * 2.0;
+        for x in [4.5, 10.5] {
+            props.extend([
+                solid([x - 0.8, 3.0, z - 0.7], [x + 0.8, 4.1, z + 0.7], Console),
+                decor([x - 0.7, 4.1, z - 0.6], [x + 0.7, 4.2, z + 0.6], Screen),
+                glow(x, z, 0.45, [4.2, 5.1 + f64::from(row % 3) * 0.3], Holo),
+                decor([x - 0.3, 3.5, z + 0.71], [x + 0.3, 3.8, z + 0.75], Lamp),
+            ]);
+        }
+    }
+    props
+}
+
+fn gym() -> Vec<Prop> {
+    let mut props = vec![
+        decor([-11.8, 3.0, -5.5], [-3.2, 3.03, 13.5], Cloth),
+        decor([-11.9, 5.0, 13.8], [-3.1, 7.0, 13.9], Screen),
+        decor([-11.0, 8.7, -4.5], [-4.0, 8.9, -4.2], Lamp),
+        decor([-11.0, 8.7, 11.8], [-4.0, 8.9, 12.1], Lamp),
+        decor([-11.8, 3.0, 16.0], [-5.5, 3.03, 28.0], Cloth),
+        decor([-11.0, 8.7, 27.8], [-4.0, 8.9, 28.1], Lamp),
+        solid([-11.5, 3.0, 26.0], [-6.0, 3.6, 27.0], Seat),
+        pillar(-4.5, -3.0, 0.55, [4.2, 6.8], Cloth),
+        decor([-4.55, 6.8, -3.05], [-4.45, 8.8, -2.95], Rail),
+    ];
+    for z in [-3.0, 3.0, 9.0] {
+        props.extend([
+            solid([-11.4, 3.0, z], [-9.0, 3.7, z + 3.0], Metal),
+            solid([-11.2, 3.7, z + 0.3], [-9.2, 3.9, z + 2.7], Seat),
+            solid([-11.5, 3.0, z + 2.0], [-11.3, 5.5, z + 2.2], Rail),
+            solid([-9.1, 3.0, z + 2.0], [-8.9, 5.5, z + 2.2], Rail),
+            decor([-11.8, 5.3, z + 2.0], [-8.6, 5.45, z + 2.2], Metal),
+            decor([-11.8, 5.0, z + 1.8], [-11.4, 5.8, z + 2.4], Metal),
+            decor([-9.0, 5.0, z + 1.8], [-8.6, 5.8, z + 2.4], Metal),
+        ]);
+    }
+    props
+}
+
+fn upper_spine() -> Vec<Prop> {
+    let mut props = Vec::new();
+    for (from, to) in [(-42.0, -30.0), (-8.0, 30.0)] {
+        props.extend(twinned(vec![
+            decor([2.3, 3.0, from], [2.45, 3.04, to], Lamp),
+            decor([2.2, 8.4, from], [2.4, 8.7, to], Pipe),
+        ]));
+        for z in [from + 1.0, (from + to) / 2.0, to - 1.0] {
+            props.extend(twinned(vec![
+                decor([2.35, 3.0, z], [2.5, 8.8, z + 0.2], Metal),
+                decor([2.3, 5.2, z + 0.3], [2.4, 6.2, z + 1.0], Screen),
+            ]));
+            props.push(decor([-2.5, 8.8, z], [2.5, 9.0, z + 0.2], Metal));
+        }
+    }
+    props
+}
+
+fn gallery() -> Vec<Prop> {
+    let mut props = Vec::new();
+    // Solid rails protect the balcony edges. The hall remains open between them.
+    for (from, to) in [(-30.0, -26.0), (-11.0, -8.0)] {
+        let edge = if from == -30.0 { to - 0.15 } else { from };
+        if from == -30.0 {
+            // Leave the reactor stair's landing open between the two rail ends.
+            props.push(solid([-17.0, 3.0, edge], [2.5, 4.3, edge + 0.15], Rail));
+            props.push(solid([5.5, 3.0, edge], [17.0, 4.3, edge + 0.15], Rail));
+        } else {
+            props.push(solid([-17.0, 3.0, edge], [17.0, 4.3, edge + 0.15], Rail));
+        }
+        for x in [-18.5, -12.0, -6.0, 6.0, 12.0, 18.5] {
+            props.extend([
+                decor([x - 0.3, 3.0, from + 0.3], [x + 0.3, 3.04, from + 0.6], Lamp),
+                decor([x - 0.3, 8.7, to - 0.7], [x + 0.3, 8.9, to - 0.4], Lamp),
+            ]);
+        }
+        props.push(decor([-10.0, 5.0, from + 0.03], [-5.0, 6.5, from + 0.1], Screen));
+    }
+    for side in [-1.0, 1.0] {
+        let mut strip = vec![
+            solid([17.0, 3.0, -26.0], [17.15, 4.3, -11.0], Rail),
+            decor([17.2, 3.0, -26.0], [17.35, 3.04, -11.0], Lamp),
+            decor([19.7, 8.3, -26.0], [19.9, 8.6, -11.0], Pipe),
+        ];
+        for z in [-25.0, -22.0, -19.0, -16.0, -13.0] {
+            strip.extend([
+                decor([19.7, 5.2, z], [19.9, 6.5, z + 1.5], Screen),
+                decor([18.5, 8.7, z], [19.0, 8.9, z + 0.7], Lamp),
+                decor([17.0, 3.0, z], [17.2, 4.3, z + 0.15], Metal),
+            ]);
+        }
+        props.extend(strip.into_iter().map(|p| if side < 0.0 { p.mirrored() } else { p }));
+    }
+    props
+}
+
+fn stairs() -> Vec<Prop> {
+    let mut props = Vec::new();
+    // Two lower-to-upper flights and the separate climb to the observation dome.
+    for (x, half, base, first, direction) in [(-3.5, 0.8, DECK, 15.0, 1.0),
+        (4.0, 1.3, DECK, -13.0, -1.0), (0.0, 1.3, UPPER_DECK, -5.0, -1.0)] {
+        for step in 0..14 {
+            let z = first + direction * f64::from(step);
+            let top = base + 0.5 * f64::from(step + 1);
+            props.extend([
+                solid([x - half, base, z - 0.5], [x + half, top, z + 0.5], Grate),
+                decor([x - half + 0.1, top, z - 0.45], [x + half - 0.1, top + 0.02, z - 0.35], Hazard),
+                decor([x + half - 0.09, top + 0.4, z - 0.3], [x + half - 0.02, top + 0.6, z + 0.3], Lamp),
+            ]);
+        }
+    }
+    props
+}
+
+fn dome() -> Vec<Prop> {
+    let mut props = raised_chair(-4.0, 10.0, -21.0);
+    props.extend(raised_chair(4.0, 10.0, -21.0));
+    props.extend([
+        solid([-3.0, 10.0, -23.7], [3.0, 11.0, -22.5], Console),
+        decor([-2.8, 11.0, -23.6], [2.8, 11.1, -22.6], Screen),
+        glow(0.0, -23.0, 0.5, [11.1, 12.4], Holo),
+        decor([-5.9, 10.0, -23.8], [-5.7, 10.04, -18.2], Lamp),
+        decor([5.7, 10.0, -23.8], [5.9, 10.04, -18.2], Lamp),
+        decor([-5.8, 14.5, -23.8], [5.8, 14.7, -23.6], Rail),
+        decor([-0.25, 14.8, -24.0], [0.25, 15.0, -18.0], Metal),
+    ]);
     props
 }
 
@@ -445,7 +664,14 @@ pub fn furnishings() -> Vec<Prop> {
     props.extend(sickbay());
     props.extend(airlock());
     props.extend(reactor());
-    props.extend(cargo());
+    props.extend(hangar());
+    props.extend(captain());
+    props.extend(arsenal());
+    props.extend(gym());
+    props.extend(upper_spine());
+    props.extend(gallery());
+    props.extend(stairs());
+    props.extend(dome());
     props
 }
 

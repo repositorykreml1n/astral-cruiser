@@ -1,6 +1,6 @@
 [mod]
 id = "astral_cruiser"
-version = "0.1.0"
+version = "0.2.0"
 priority = 100
 
 # Hooks the game's own renderer as well as hook points, so it builds on this commit only.
@@ -43,6 +43,45 @@ source = "ship_gpu.rs"
 visibility = "pub"
 
 [[module]]
+id = "fx_instance"
+file = "crates/horizon-client-render/src/gfx.rs"
+name = "astral_fx_instance"
+source = "fx_instance.rs"
+visibility = "pub"
+
+[[module]]
+id = "fx_shader"
+file = "crates/horizon-client-render/src/gfx.rs"
+name = "astral_fx_shader"
+source = "fx_shader.rs"
+visibility = "pub"
+
+[[module]]
+id = "fx_gpu"
+file = "crates/horizon-client-render/src/gfx.rs"
+name = "astral_fx_gpu"
+source = "fx_gpu.rs"
+visibility = "pub"
+
+[[module]]
+id = "fx_budget"
+file = "crates/horizon-client/src/game.rs"
+name = "astral_fx_budget"
+source = "fx_budget.rs"
+
+[[module]]
+id = "fx_recipe"
+file = "crates/horizon-client/src/game.rs"
+name = "astral_fx_recipe"
+source = "fx_recipe.rs"
+
+[[module]]
+id = "effect_events"
+file = "crates/horizon-client/src/game.rs"
+name = "astral_effect_events"
+source = "effect_events.rs"
+
+[[module]]
 id = "passenger"
 file = "crates/horizon-client-render/src/gfx.rs"
 name = "astral_passenger"
@@ -55,6 +94,86 @@ file = "crates/horizon-client-render/src/gfx.rs"
 name = "astral_portal_shader"
 source = "portal_shader.rs"
 visibility = "pub"
+
+[[module]]
+id = "orbit_fx"
+file = "crates/horizon-client-render/src/gfx.rs"
+name = "astral_orbit_fx"
+source = "orbit_fx.rs"
+visibility = "pub"
+
+[[module]]
+id = "arsenal_fx"
+file = "crates/horizon-client-render/src/gfx.rs"
+name = "astral_arsenal_fx"
+source = "arsenal_fx.rs"
+visibility = "pub"
+
+[[module]]
+id = "crater"
+file = "crates/horizon-client/src/game.rs"
+name = "astral_crater"
+source = "crater.rs"
+
+[[module]]
+id = "orbit"
+file = "crates/horizon-client/src/game.rs"
+name = "astral_orbit"
+source = "orbit.rs"
+
+[[module]]
+id = "lance"
+file = "crates/horizon-client/src/game.rs"
+name = "astral_lance"
+source = "lance.rs"
+
+[[module]]
+id = "pad"
+file = "crates/horizon-client/src/game.rs"
+name = "astral_pad"
+source = "pad.rs"
+
+[[module]]
+id = "clouds"
+file = "crates/horizon-client/src/game.rs"
+name = "astral_clouds"
+source = "clouds.rs"
+
+[[module]]
+id = "strike_math"
+file = "crates/horizon-client/src/game.rs"
+name = "astral_strike_math"
+source = "strike_math.rs"
+
+[[module]]
+id = "arsenal"
+file = "crates/horizon-client/src/game.rs"
+name = "astral_arsenal"
+source = "arsenal.rs"
+
+[[module]]
+id = "strike_plans"
+file = "crates/horizon-client/src/game.rs"
+name = "astral_strike_plans"
+source = "strike_plans.rs"
+
+[[module]]
+id = "shockwave"
+file = "crates/horizon-client/src/game.rs"
+name = "astral_shockwave"
+source = "shockwave.rs"
+
+[[module]]
+id = "scorch"
+file = "crates/horizon-client/src/game.rs"
+name = "astral_scorch"
+source = "scorch.rs"
+
+[[module]]
+id = "flat_swap"
+file = "crates/horizon-client-render/src/gfx/flat.rs"
+name = "astral_flat_swap"
+source = "flat_swap.rs"
 
 [[module]]
 id = "portal_gpu"
@@ -74,6 +193,12 @@ id = "pilot"
 file = "crates/horizon-client/src/game.rs"
 name = "astral_pilot"
 source = "pilot.rs"
+
+[[module]]
+id = "lang"
+file = "crates/horizon-client/src/game.rs"
+name = "astral_lang"
+source = "lang.rs"
 
 [[module]]
 id = "save"
@@ -98,12 +223,6 @@ id = "jump"
 file = "crates/horizon-client/src/game.rs"
 name = "astral_jump"
 source = "jump.rs"
-
-[[module]]
-id = "panel"
-file = "crates/horizon-client/src/game.rs"
-name = "astral_panel"
-source = "panel.rs"
 
 [[module]]
 id = "tutorial"
@@ -220,6 +339,83 @@ target = "horizon_client::game::ghasts::Game<'_>::player_entity_collisions"
 helper = "solid_hull.rs"
 bindings = [
   { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+]
+
+[[module]]
+id = "hull_collision"
+file = "crates/horizon-client-render/src/collisions.rs"
+name = "astral_hull_collision"
+source = "hull_collision.rs"
+visibility = "pub"
+
+[[injection]]
+id = "hull_item_tick"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::Game<'_>::tick_world"
+helper = "hull_item_tick.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "running", ty = "bool", value = "running" },
+]
+
+[[injection]]
+id = "hull_mob_tick"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::creatures::Game<'_>::tick_creature_entities"
+helper = "hull_mob_tick.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+]
+
+[[injection]]
+id = "hull_arrow_tick"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::creatures::Game<'_>::tick_creature_entities"
+helper = "hull_arrow_tick.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+]
+
+[[injection]]
+id = "hull_move"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client_render::collisions::SceneCollisions<'_,'_>::resolve_with_context"
+helper = "hull_move.rs"
+bindings = [
+  { name = "scene", ty = "&mut crate::collisions::SceneCollisions<'_, '_>", value = "&mut *self" },
+  { name = "bounds", ty = "Aabb", value = "bounds" },
+  { name = "movement", ty = "Vec3", value = "movement" },
+  { name = "max_step", ty = "f32", value = "max_step" },
+  { name = "on_ground", ty = "bool", value = "on_ground" },
+  { name = "context", ty = "CollisionContext<'_>", value = "context" },
+]
+
+[[injection]]
+id = "hull_arrow_hit"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::arrows::Ticker<'_,'_,'_,'_>::step_move_and_hit"
+helper = "hull_arrow_hit.rs"
+bindings = [
+  { name = "ticker", ty = "&mut Ticker<'_, '_, '_, '_>", value = "&mut *self" },
+  { name = "from", ty = "Vec3", value = "from" },
+  { name = "to", ty = "Vec3", value = "to" },
+  { name = "targets", ty = "&[(Who, Aabb)]", value = "targets" },
+]
+
+[[injection]]
+id = "hull_arrow_support"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::arrows::ArrowScene<'_,'_>::no_block_collision"
+helper = "hull_arrow_support.rs"
+bindings = [
+  { name = "scene", ty = "&ArrowScene<'_, '_>", value = "&*self" },
+  { name = "bounds", ty = "Aabb", value = "b" },
 ]
 
 [[injection]]
@@ -367,3 +563,131 @@ kind = "HEAD"
 target = "horizon_threads::configure_allocator"
 helper = "allocator_setup.rs"
 bindings = []
+
+[[module]]
+id = "streaming_take"
+file = "crates/horizon-client-render/src/streaming.rs"
+name = "astral_streaming_take"
+source = "streaming_take.rs"
+
+[[injection]]
+id = "adopt"
+kind = "HEAD"
+target = "horizon_client::game::remote::Game<'_>::enter_remote_dimension"
+helper = "adopt.rs"
+bindings = []
+
+# The ship's tablet: its pure layout, its drawing and input on the game, its map.
+[[module]]
+id = "tablet"
+file = "crates/horizon-client/src/game.rs"
+name = "astral_tablet"
+source = "tablet.rs"
+
+[[module]]
+id = "tablet_map"
+file = "crates/horizon-client/src/game.rs"
+name = "astral_tablet_map"
+source = "tablet_map.rs"
+
+[[module]]
+id = "tablet_draw"
+file = "crates/horizon-client/src/game.rs"
+name = "astral_tablet_draw"
+source = "tablet_draw.rs"
+
+# While the tablet's marker dialog is open, the tablet draws and takes the input.
+[[injection]]
+id = "tablet_hook_draw"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::dialogs::Game<'_>::draw_dialog"
+helper = "tablet_hook_draw.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "batch", ty = "&mut horizon_client::hud::HudBatch", value = "&mut *batch" },
+]
+
+[[injection]]
+id = "tablet_hook_layout"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::dialogs::Game<'_>::dialog_layout"
+helper = "tablet_hook_layout.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+]
+
+[[injection]]
+id = "tablet_hook_release"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::dialogs::Game<'_>::dialog_release"
+helper = "tablet_hook_release.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+]
+
+[[injection]]
+id = "tablet_hook_drag"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::dialogs::Game<'_>::dialog_drag"
+helper = "tablet_hook_drag.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+]
+
+[[injection]]
+id = "tablet_hook_scroll"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::dialogs::Game<'_>::dialog_scroll"
+helper = "tablet_hook_scroll.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "delta", ty = "f32", value = "delta" },
+]
+
+[[injection]]
+id = "tablet_hook_key"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::dialogs::Game<'_>::dialog_key"
+helper = "tablet_hook_key.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "key", ty = "winit::keyboard::KeyCode", value = "key" },
+  { name = "shortcut", ty = "Option<horizon_client::clipboard::EditShortcut>", value = "shortcut" },
+  { name = "text", ty = "Option<&str>", value = "text" },
+]
+
+[[module]]
+id = "guns"
+file = "crates/horizon-client/src/game.rs"
+name = "astral_guns"
+source = "guns.rs"
+
+[[module]]
+id = "debris"
+file = "crates/horizon-client/src/game.rs"
+name = "astral_debris"
+source = "debris.rs"
+
+[[module]]
+id = "gun_mesh"
+file = "crates/horizon-client/src/game.rs"
+name = "astral_gun_mesh"
+source = "gun_mesh.rs"
+
+[[module]]
+id = "weapon_wheel"
+file = "crates/horizon-client/src/game.rs"
+name = "astral_weapon_wheel"
+source = "weapon_wheel.rs"
+
+[[module]]
+id = "onboarding"
+file = "crates/horizon-client/src/game.rs"
+name = "astral_onboarding"
+source = "onboarding.rs"

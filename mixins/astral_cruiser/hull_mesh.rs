@@ -1,7 +1,7 @@
 // The hull as triangles for the GPU, built once from the layout. Each face has
 // its own vertices so edges stay sharp, and carries the part's material for the
 // shader.
-use super::astral_layout::{Face, Material, Part, Prop, Room, Shape, ShipLayout, WeaponMountKind};
+use super::astral_layout::{Face, Material, Part, Prop, Room, RoomKind, Shape, ShipLayout, WeaponMountKind};
 use glam::{DQuat, DVec3, Vec3};
 use std::f32::consts::TAU;
 
@@ -66,7 +66,69 @@ pub fn part_vertices(part: &Part) -> Vec<HullVertex> {
 }
 
 pub fn hull_vertices(layout: &ShipLayout) -> Vec<HullVertex> {
-    layout.parts.iter().flat_map(part_vertices).collect()
+    let mut out = Vec::new();
+    for part in &layout.parts {
+        let vertices = part_vertices(part);
+        if part.material == Material::Glass {
+            out.extend(vertices);
+            continue;
+        }
+        for face in vertices.chunks_exact(3) {
+            let mut pieces = vec![face.iter().map(|v| Vec3::from_array(v.position)).collect()];
+            for room in &layout.rooms {
+                pieces = pieces.into_iter().flat_map(|p| outside_room(p, room)).collect();
+                if pieces.is_empty() { break; }
+            }
+            for polygon in pieces {
+                for i in 1..polygon.len() - 1 {
+                    let corners = [polygon[0], polygon[i], polygon[i + 1]];
+                    if (corners[1] - corners[0]).cross(corners[2] - corners[0]).length_squared() > 1e-10 {
+                        triangle(&mut out, corners, part.material as u32);
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Clip a convex face against one side of a plane, preserving its winding.
+fn clip_plane(polygon: &[Vec3], axis: usize, plane: f32, positive: bool) -> Vec<Vec3> {
+    let mut out = Vec::new();
+    let Some(&last) = polygon.last() else { return out; };
+    let inside = |p: Vec3| if positive { p[axis] >= plane } else { p[axis] <= plane };
+    let mut previous = last;
+    for &current in polygon {
+        if inside(previous) != inside(current) {
+            let share = (plane - previous[axis]) / (current[axis] - previous[axis]);
+            out.push(previous + (current - previous) * share);
+        }
+        if inside(current) { out.push(current); }
+        previous = current;
+    }
+    out
+}
+
+/// A hull face may run through a room when decks overlap older armor volumes.
+/// Keep only the face pieces outside the air, including on tapered hull sides.
+fn outside_room(polygon: Vec<Vec3>, room: &Room) -> Vec<Vec<Vec3>> {
+    // A hair past the room boundary also removes opaque faces under glazing.
+    let low = room.min.as_vec3() - Vec3::splat(0.001);
+    let high = room.max.as_vec3() + Vec3::splat(0.001);
+    let min = polygon.iter().copied().fold(Vec3::splat(f32::INFINITY), Vec3::min);
+    let max = polygon.iter().copied().fold(Vec3::splat(f32::NEG_INFINITY), Vec3::max);
+    if max.cmplt(low).any() || min.cmpgt(high).any() { return vec![polygon]; }
+    let mut inside = polygon;
+    let mut outside = Vec::new();
+    for axis in 0..3 {
+        for (plane, positive) in [(low[axis], true), (high[axis], false)] {
+            let piece = clip_plane(&inside, axis, plane, !positive);
+            if piece.len() >= 3 { outside.push(piece); }
+            inside = clip_plane(&inside, axis, plane, positive);
+            if inside.len() < 3 { return outside; }
+        }
+    }
+    outside
 }
 
 /// A corner of a prop's box, on a sloped top where that has fallen.
@@ -198,7 +260,7 @@ pub struct BoltVertex {
 }
 
 /// The most vertices a frame's shots may take: the size of their GPU buffer.
-pub const BOLT_VERTICES: usize = 6 * 512;
+pub const BOLT_VERTICES: usize = 6 * 4096;
 /// A beam never looks thinner than this, per block from the camera: the pilot's
 /// view hangs far behind the guns.
 const BOLT_LEAST_WIDTH: f32 = 0.0015;
@@ -474,12 +536,25 @@ fn room_faces(out: &mut Vec<HullVertex>, layout: &ShipLayout, index: usize) {
         for positive_side in [false, true] {
             let plane = if positive_side { room.max[axis] } else { room.min[axis] };
             let holes: Vec<Rect> = if axis == Y {
-                // Rooms that overlap share one floor and one ceiling.
-                layout.rooms[..index]
+                // Keep balcony floors over the reactor air, but cut stair openings
+                // through deck slabs and lower ceilings. Coplanar faces draw once.
+                let rooms = layout.rooms
                     .iter()
-                    .filter(|other| other.min.y == room.min.y)
-                    .map(|other| span(other.min, other.max, axis))
-                    .collect()
+                    .enumerate()
+                    .filter(|(i, _)| *i != index)
+                    .filter(|(i, other)| {
+                        let other_plane = if positive_side { other.max.y } else { other.min.y };
+                        let coplanar = *i < index && other_plane == plane;
+                        let crosses = other.min.y < plane && other.max.y > plane;
+                        coplanar || (crosses && (positive_side || other.kind == RoomKind::Stairwell))
+                    })
+                    .map(|(_, other)| span(other.min, other.max, axis));
+                let skylights = layout.parts
+                    .iter()
+                    .filter(|p| positive_side && p.material == Material::Glass
+                        && p.min.y == plane && p.max.y >= plane)
+                    .map(|p| span(p.min, p.max, axis));
+                rooms.chain(skylights).collect()
             } else {
                 let rooms = layout
                     .rooms
@@ -508,6 +583,26 @@ pub fn interior_vertices(layout: &ShipLayout) -> Vec<HullVertex> {
     let mut out = Vec::new();
     for index in 0..layout.rooms.len() {
         room_faces(&mut out, layout, index);
+    }
+    out
+}
+
+// Solid emissive cubes reuse the depth-tested Bolt vertex format.
+#[derive(Clone, Copy, Debug)]
+pub struct LightCube {
+    pub center: DVec3, pub rotation: DQuat, pub half: f64, pub color: [f32; 4],
+}
+pub const CUBE_VERTICES: usize = 36 * 4512;
+pub fn cube_vertices(cubes: &[LightCube], camera: DVec3) -> Vec<BoltVertex> {
+    let mut out = Vec::new();
+    for cube in cubes.iter().take(4512) {
+        for face in FACES {
+            let corners = face.map(|c| {
+                let p = DVec3::new(c[0] as f64, c[1] as f64, c[2] as f64) * cube.half;
+                ((cube.center - camera + cube.rotation * p).as_vec3(), [2.0, 2.0])
+            });
+            bolt_quad(&mut out, corners, cube.color);
+        }
     }
     out
 }

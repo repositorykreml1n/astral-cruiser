@@ -6,7 +6,8 @@ mod astral_pilot;
 use astral_core::{CollisionQuery, ShipPose};
 use astral_pilot::{
     Arrival, Footing, PilotKeys, ShipIs, Step, chase_camera, ease_angle, flight_input, footing,
-    landing_y, near_door, refusal, rise_out, roof_at, solid_cells, spawn_pose, streaks,
+    ORBIT_ZOOM_MAX, landing_y, near_door, orbit_camera, refusal, rise_out, roof_at, solid_cells,
+    spawn_pose, streaks,
     turret_angles, yaw_of,
 };
 use glam::{DQuat, DVec3};
@@ -479,4 +480,20 @@ fn mobs_by_the_ship_are_drawn_for_a_camera_far_behind_it() {
 #[test]
 fn the_ships_own_eye_is_clear_of_its_nose() {
     assert!(astral_pilot::SHIP_EYE.z > 80.0);
+}
+
+#[test]
+fn orbit_camera_looks_straight_down() {
+    let center = DVec3::new(10.0, 346.0, -20.0);
+    let (eye, look) = orbit_camera(center, 40.0);
+    assert_eq!(eye, DVec3::new(10.0, 346.0 - 30.0 - 40.0, -20.0));
+    assert_eq!(look, DVec3::new(0.0, -1.0, 0.0));
+}
+
+#[test]
+fn orbit_camera_zoom_is_clamped() {
+    let center = DVec3::new(0.0, 346.0, 0.0);
+    assert_eq!(orbit_camera(center, -5.0).0.y, 316.0);
+    assert_eq!(orbit_camera(center, 1000.0).0.y, 346.0 - 30.0 - ORBIT_ZOOM_MAX);
+    assert_eq!(ORBIT_ZOOM_MAX, 240.0);
 }

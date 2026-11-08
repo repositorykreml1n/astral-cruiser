@@ -4,7 +4,19 @@ mod astral_shader;
 #[path = "../mixins/astral_cruiser/portal_shader.rs"]
 mod astral_portal_shader;
 
+#[path = "../mixins/astral_cruiser/fx_shader.rs"]
+mod astral_fx_shader;
+
 use naga::valid::{Capabilities, ValidationFlags, Validator};
+
+#[test]
+fn the_fx_shader_compiles() {
+    let module = naga::front::wgsl::parse_str(astral_fx_shader::SHADER)
+        .unwrap_or_else(|e| panic!("{}", e.emit_to_string(astral_fx_shader::SHADER)));
+    Validator::new(ValidationFlags::all(), Capabilities::all())
+        .validate(&module)
+        .unwrap_or_else(|e| panic!("{e:?}"));
+}
 
 #[test]
 fn the_portal_shader_compiles() {

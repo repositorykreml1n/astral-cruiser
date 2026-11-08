@@ -4,6 +4,7 @@
 use super::astral_core::Dimension;
 
 /// Where the player stands with regard to the ship.
+#[allow(dead_code)]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Place {
     NoShip,
@@ -13,6 +14,7 @@ pub enum Place {
 }
 
 /// What the panel shows.
+#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq)]
 pub struct PanelState {
     pub russian: bool,
@@ -28,12 +30,18 @@ pub struct PanelState {
     pub portal_open: bool,
 }
 
+#[allow(dead_code)]
 const COORDINATE_LENGTH: u32 = 16;
+#[allow(dead_code)]
 const CRUISE_SLIDER: (f64, f64, f64) = (16.0, 256.0, 8.0);
+#[allow(dead_code)]
 const DASH_SLIDER: (f64, f64, f64) = (200.0, 4000.0, 100.0);
+#[allow(dead_code)]
 const WIDE: u32 = 220;
+#[allow(dead_code)]
 const BUTTON: u32 = 104;
 
+#[allow(dead_code)]
 pub fn quoted(text: &str) -> String {
     let inner: String = text
         .chars()
@@ -45,21 +53,25 @@ pub fn quoted(text: &str) -> String {
     format!("\"{inner}\"")
 }
 
+#[allow(dead_code)]
 fn button(label: &str, action: String) -> String {
     format!("{{label:{},width:{BUTTON},action:{action}}}", quoted(label))
 }
 
 /// A button that runs a command as it stands.
+#[allow(dead_code)]
 fn runs(label: &str, command: &str) -> String {
     button(label, format!("{{type:\"run_command\",command:{}}}", quoted(command)))
 }
 
 /// A button that runs a command with the values of the inputs filled in.
+#[allow(dead_code)]
 fn fills_in(label: &str, template: &str) -> String {
     let template = quoted(template);
     button(label, format!("{{type:\"dynamic/run_command\",template:{template}}}"))
 }
 
+#[allow(dead_code)]
 fn field(key: &str, label: &str, value: f64) -> String {
     format!(
         "{{type:\"text\",key:{},label:{},width:{WIDE},max_length:{COORDINATE_LENGTH},initial:{}}}",
@@ -69,6 +81,7 @@ fn field(key: &str, label: &str, value: f64) -> String {
     )
 }
 
+#[allow(dead_code)]
 fn slider(key: &str, label: &str, (start, end, step): (f64, f64, f64), value: f64) -> String {
     format!(
         "{{type:\"number_range\",key:{},label:{},width:{WIDE},start:{start},end:{end},step:{step},initial:{}}}",
@@ -78,6 +91,7 @@ fn slider(key: &str, label: &str, (start, end, step): (f64, f64, f64), value: f6
     )
 }
 
+#[allow(dead_code)]
 fn portal_buttons(state: &PanelState, say: &dyn Fn(&'static str, &'static str) -> &'static str) -> Vec<String> {
     let all = [
         (Dimension::Overworld, say("Portal: Overworld", "Портал: Мир"), "astral portal overworld"),
@@ -92,6 +106,7 @@ fn portal_buttons(state: &PanelState, say: &dyn Fn(&'static str, &'static str) -
 }
 
 /// The dialog, in the game's text form for tags.
+#[allow(dead_code)]
 pub fn dialog(state: &PanelState) -> String {
     let russian = state.russian;
     let say = move |english: &'static str, ours: &'static str| if russian { ours } else { english };
@@ -128,6 +143,16 @@ pub fn dialog(state: &PanelState) -> String {
                 runs(say("Blasting: off", "Разрушение: выкл"), "astral blast on")
             };
             actions.push(blast);
+            actions.push(runs(say("Orbit", "Орбита"), "astral orbit"));
+            let strikes = [
+                (say("Ion beam at X Z", "Ионный луч по X Z"), "ion"),
+                (say("Barrage at X Z", "Залп по X Z"), "barrage"),
+                (say("Kinetic rod at X Z", "Стержень по X Z"), "rod"),
+                (say("Lance at X Z", "Резак по X Z"), "lance"),
+            ];
+            for (label, kind) in strikes {
+                actions.push(fills_in(label, &format!("astral strike {kind} $(x) $(z)")));
+            }
             actions.push(runs(say("Controls / bridge", "Штурвал / мостик"), "astral walk"));
             actions.push(runs(say("Leave the ship", "Выйти"), "astral leave"));
         }

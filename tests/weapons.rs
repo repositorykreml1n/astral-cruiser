@@ -1,3 +1,4 @@
+#[allow(dead_code)]
 #[path = "../mixins/astral_cruiser/weapons.rs"]
 mod astral_weapons;
 
@@ -19,9 +20,27 @@ fn idle(battery: &mut Battery, ticks: u32) -> Vec<Shot> {
 }
 
 #[test]
-fn turrets_fire_ten_pulses_a_second() {
+fn capacity_is_ten_thousand() {
+    let battery = Battery::new();
+    assert_eq!(battery.energy, 10_000.0);
+    assert_eq!(astral_weapons::CAPACITY, 10_000.0);
+    assert_eq!(battery.level(), 1.0);
+}
+
+#[test]
+fn turret_fires_once_per_tick_at_most() {
     let shots = hold(&mut Battery::new(), WeaponKind::Turrets, 20);
-    assert_eq!(shots.len(), 10);
+    assert_eq!(shots.len(), 20);
+}
+
+#[test]
+fn overheat_takes_hundred_times_longer() {
+    let mut battery = Battery::new();
+    for _ in 0..1200 {
+        battery.tick(WeaponKind::Turrets, true, TICK);
+        assert!(!battery.locked, "battery should not overheat during 60s of continuous turret fire");
+        assert!(battery.heat < 1.0);
+    }
 }
 
 #[test]
@@ -35,7 +54,7 @@ fn turrets_take_turns_round_all_eight_mounts() {
 fn the_nose_guns_alternate_at_their_own_slower_pace() {
     let shots = hold(&mut Battery::new(), WeaponKind::NosePulse, 26);
     let mounts: Vec<usize> = shots.iter().map(|s| s.mount).collect();
-    assert_eq!(mounts.len(), 5);
+    assert_eq!(mounts.len(), 26);
     assert_eq!(mounts[..3], [8, 9, 8]);
 }
 
@@ -77,10 +96,18 @@ fn a_fired_main_beam_burns_its_full_length_even_after_letting_go() {
 fn the_main_beam_needs_time_before_it_can_charge_again() {
     let mut battery = Battery::new();
     hold(&mut battery, WeaponKind::MainBeam, 40);
-    battery.energy = 100.0;
-    idle(&mut battery, 40);
-    let again = hold(&mut battery, WeaponKind::MainBeam, 41);
-    assert!(again.is_empty(), "fired {} shots during the cooldown", again.len());
+    battery.energy = astral_weapons::CAPACITY;
+    // 29 ticks to finish burn (1.45 s) + 1 tick where cooldown remains (0.01 s left) = 30 ticks
+    let during_burn_and_cooldown = hold(&mut battery, WeaponKind::MainBeam, 30);
+    assert_eq!(during_burn_and_cooldown.len(), 29);
+    assert_eq!(battery.charge, 0.0, "charge should not build during burn or cooldown");
+    // Next 40 ticks clear the remaining 0.06 s cooldown and charge to just under 1.0
+    let charging = hold(&mut battery, WeaponKind::MainBeam, 40);
+    assert!(charging.is_empty(), "charging does not fire shots");
+    assert!(battery.charge > 0.9 && battery.charge < 1.0);
+    // At the next tick it reaches full charge and fires
+    let fired = hold(&mut battery, WeaponKind::MainBeam, 1);
+    assert_eq!(fired.len(), 1);
 }
 
 #[test]
@@ -115,13 +142,23 @@ fn the_battery_refills_when_nothing_fires() {
 #[test]
 fn overheating_locks_every_weapon_until_the_guns_have_cooled() {
     let mut battery = Battery::new();
-    battery.heat = 0.999;
-    hold(&mut battery, WeaponKind::BellyBeam, 2);
+    battery.heat = 1.0;
+    battery.locked = true;
     assert!(battery.locked);
-    assert!(hold(&mut battery, WeaponKind::Turrets, 10).is_empty());
-    idle(&mut battery, 200);
+    assert!(hold(&mut battery, WeaponKind::Turrets, 1).is_empty());
+    assert!(battery.locked);
+    idle(&mut battery, 2);
     assert!(!battery.locked);
-    assert!(!hold(&mut battery, WeaponKind::Turrets, 4).is_empty());
+    assert!(!hold(&mut battery, WeaponKind::Turrets, 1).is_empty());
+}
+
+#[test]
+fn weapon_names_and_battery_levels() {
+    let battery = Battery::new();
+    assert_eq!(battery.level(), 1.0);
+    for kind in WeaponKind::ALL {
+        assert!(!kind.name().is_empty());
+    }
 }
 
 #[test]

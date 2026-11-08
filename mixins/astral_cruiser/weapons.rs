@@ -7,32 +7,34 @@ const NOSE_MOUNTS: [usize; 2] = [8, 9];
 const BELLY_MOUNT: usize = 10;
 const MAIN_MOUNT: usize = 11;
 
-const FULL_ENERGY: f64 = 100.0;
-const RECHARGE: f64 = 9.0;
-const COOLING: f64 = 0.12;
+pub const CAPACITY: f64 = 10_000.0;
+pub const FULL_ENERGY: f64 = CAPACITY;
+pub const RECHARGE: f64 = 900.0;
+pub const COOLING: f64 = 12.0;
+pub const MIN_INTERVAL: f64 = 0.05;
 /// Once overheated, the guns stay locked until the heat falls to this.
-const SAFE_HEAT: f64 = 0.35;
+pub const SAFE_HEAT: f64 = 0.35;
 
-const TURRET_INTERVAL: f64 = 0.1;
+pub const TURRET_INTERVAL: f64 = 0.05;
 const TURRET_ENERGY: f64 = 1.2;
-const TURRET_HEAT: f64 = 0.012;
+const TURRET_HEAT: f64 = 0.00012;
 const TURRET_DAMAGE: f64 = 5.0;
 
-const NOSE_INTERVAL: f64 = 0.3;
+pub const NOSE_INTERVAL: f64 = 0.05;
 const NOSE_ENERGY: f64 = 4.0;
-const NOSE_HEAT: f64 = 0.05;
+const NOSE_HEAT: f64 = 0.0005;
 const NOSE_DAMAGE: f64 = 16.0;
 
 const BELLY_ENERGY: f64 = 10.0;
-const BELLY_HEAT: f64 = 0.22;
+const BELLY_HEAT: f64 = 0.0022;
 const BELLY_DAMAGE: f64 = 30.0;
 
 const MAIN_CHARGE: f64 = 2.0;
 const MAIN_BURN: f64 = 1.5;
 const MAIN_ENERGY: f64 = 35.0;
-const MAIN_HEAT: f64 = 0.6;
+const MAIN_HEAT: f64 = 0.006;
 const MAIN_DAMAGE: f64 = 200.0;
-const MAIN_COOLDOWN: f64 = 6.0;
+const MAIN_COOLDOWN: f64 = 0.06;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum WeaponKind {
@@ -95,12 +97,12 @@ impl Default for Battery {
 
 impl Battery {
     pub fn new() -> Self {
-        Self::restored(FULL_ENERGY, 0.0)
+        Self::restored(CAPACITY, 0.0)
     }
 
     pub fn restored(energy: f64, heat: f64) -> Self {
         Self {
-            energy: energy.clamp(0.0, FULL_ENERGY),
+            energy: energy.clamp(0.0, CAPACITY),
             heat: heat.clamp(0.0, 1.0),
             locked: false,
             charge: 0.0,
@@ -115,7 +117,7 @@ impl Battery {
 
     /// The share of a full battery left, 0 to 1.
     pub fn level(&self) -> f64 {
-        self.energy / FULL_ENERGY
+        self.energy / CAPACITY
     }
 
     fn spend(&mut self, energy: f64, heat: f64) -> bool {
@@ -134,7 +136,7 @@ impl Battery {
         self.main_wait = (self.main_wait - dt).max(0.0);
         self.heat = (self.heat - COOLING * dt).max(0.0);
         if !firing {
-            self.energy = (self.energy + RECHARGE * dt).min(FULL_ENERGY);
+            self.energy = (self.energy + RECHARGE * dt).min(CAPACITY);
         }
         self.locked = self.locked && self.heat > SAFE_HEAT;
     }

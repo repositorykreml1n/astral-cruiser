@@ -8,8 +8,8 @@ mod astral_passage;
 use astral_core::{CollisionQuery, Dimension, HULL_HALF_EXTENTS, ShipPose};
 use astral_dash::chunks_of;
 use astral_passage::{
-    ExitKind, Finding, Gate, OPENING, PassStage, Passage, Stride, corresponding, room_at,
-    spots_around, through_opening,
+    ExitKind, Finding, Gate, OPENING, PassStage, Passage, Stride, adoption_ok, corresponding,
+    room_at, scene_radius, spots_around, through_opening,
 };
 use glam::{DQuat, DVec3};
 use std::collections::HashSet;
@@ -573,4 +573,31 @@ fn entry_area_is_centred_on_the_entry() {
     assert_eq!(cx, (gate.entry.x.floor() as i32) >> 4);
     assert_eq!(cz, (gate.entry.z.floor() as i32) >> 4);
     assert_eq!(radius, 14);
+}
+
+#[test]
+fn adoption_ok_when_scene_covers_render_distance() {
+    assert!(adoption_ok(Dimension::End, Dimension::End, ((0, 0), 13), (2, -3), 10, false));
+}
+
+#[test]
+fn adoption_refused_when_scene_does_not_cover_exit() {
+    assert!(!adoption_ok(Dimension::End, Dimension::End, ((0, 0), 13), (10, 0), 10, false));
+}
+
+#[test]
+fn adoption_refused_for_other_dimension() {
+    assert!(!adoption_ok(Dimension::Nether, Dimension::End, ((0, 0), 13), (0, 0), 10, false));
+}
+
+#[test]
+fn adoption_refused_while_closing() {
+    assert!(!adoption_ok(Dimension::End, Dimension::End, ((0, 0), 13), (0, 0), 10, true));
+}
+
+#[test]
+fn scene_radius_follows_render_distance() {
+    assert_eq!(scene_radius(12), 14);
+    assert_eq!(scene_radius(20), 21);
+    assert_eq!(scene_radius(2), 14);
 }

@@ -31,6 +31,10 @@ pub enum Material {
     Lamp = 21,
     Door = 22,
     Turret = 23,
+    Stripe = 24,
+    /// Navigation lights: +X red, -X green, centerline ends white.
+    Beacon = 25,
+    Panel = 26,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -39,11 +43,17 @@ pub enum RoomKind {
     Corridor,
     Reactor,
     Weapons,
-    Cargo,
+    Hangar,
     Airlock,
     Quarters,
     Mess,
     Medbay,
+    Captain,
+    Arsenal,
+    Gym,
+    Gallery,
+    Dome,
+    Stairwell,
     Doorway,
 }
 
@@ -214,10 +224,38 @@ pub struct ShipLayout {
 
 const DECK: f64 = -4.0;
 const CEILING: f64 = 2.0;
+pub const UPPER_DECK: f64 = 3.0;
+pub const UPPER_CEILING: f64 = 9.0;
+pub const RAMP_HEIGHT: f64 = 12.0;
+pub const RAMP_SECONDS: f64 = 2.0;
 /// The top of a door.
 const LINTEL: f64 = -0.6;
 /// The passage to the outer door, past the airlock.
 const OUTER_DOOR: [f64; 2] = [20.9, 21.4];
+
+pub fn ramp_target(height_above_ground: f64) -> f64 {
+    if height_above_ground.is_finite() && height_above_ground < RAMP_HEIGHT {
+        1.0
+    } else {
+        0.0
+    }
+}
+
+pub fn ramp_step(open: f64, target: f64, dt: f64) -> f64 {
+    if !open.is_finite() || !target.is_finite() || !dt.is_finite() {
+        return 0.0;
+    }
+    let open = open.clamp(0.0, 1.0);
+    let target = target.clamp(0.0, 1.0);
+    let step = dt.max(0.0) / RAMP_SECONDS;
+    if open < target {
+        (open + step).min(target)
+    } else if open > target {
+        (open - step).max(target)
+    } else {
+        open
+    }
+}
 
 fn part(min: [f64; 3], max: [f64; 3], material: Material) -> Part {
     Part {
@@ -253,7 +291,7 @@ fn hull() -> Vec<Part> {
         tapered([-30.0, 6.0, -66.0], [30.0, 10.0, 54.0], Armor, 0.18, 0.82),
         tapered([-20.0, 10.0, -62.0], [20.0, 13.0, 14.0], Hull, 0.3, 0.8),
         tapered([-6.0, 13.0, -50.0], [6.0, 15.0, -6.0], Armor, 0.75, 0.7),
-        tapered([-9.0, 15.0, -42.0], [9.0, 17.0, -20.0], Hull, 0.8, 0.75),
+        tapered([-9.0, 15.0, -42.0], [9.0, 17.0, -26.0], Hull, 0.8, 0.75),
         part([-1.0, 17.0, -36.0], [1.0, 18.0, -30.0], Trim),
         tapered([-26.0, -14.0, -62.0], [26.0, -10.0, 50.0], Armor, 0.22, 1.0),
         tapered([-6.0, -18.0, -20.0], [6.0, -14.0, 46.0], Armor, 0.5, 1.0),
@@ -284,6 +322,53 @@ fn hull() -> Vec<Part> {
     ];
     parts.extend(side);
     parts.extend(side.map(mirrored));
+    // The second deck and the double-height reactor hall sit in stepped armor.
+    // Hull volumes enclose the room air; the plates give the outside its seams.
+    parts.extend([
+        part([-13.0, 2.0, -42.0], [13.0, 10.0, 30.0], Hull),
+        part([-21.0, -9.0, -30.0], [21.0, 9.5, -8.0], Hull),
+        part([-6.0, 9.0, -24.0], [6.0, 15.0, -18.0], Hull),
+        part([-1.5, 2.0, -19.0], [1.5, 15.0, -4.0], Hull),
+        tapered([-6.4, 10.0, -24.4], [6.4, 15.4, -17.6], Glass, 1.0, 0.95),
+        tapered([-6.4, 15.4, -24.4], [6.4, 16.0, -17.6], Glass, 1.0, 0.8),
+        tapered([-5.2, 16.0, -23.8], [5.2, 16.6, -18.2], Glass, 1.0, 0.65),
+        tapered([-3.4, 16.6, -23.0], [3.4, 17.2, -19.0], Glass, 1.0, 0.35),
+        // Two roof lights leave a narrow structural spar on the centerline.
+        part([-6.0, 15.0, -24.0], [-0.25, 15.2, -18.0], Glass),
+        part([0.25, 15.0, -24.0], [6.0, 15.2, -18.0], Glass),
+        part([-12.8, 9.6, -42.0], [12.8, 10.0, -31.0], Panel),
+        part([-12.8, 9.6, 12.0], [12.8, 10.0, 28.0], Panel),
+        part([-0.24, 17.2, -23.0], [0.24, 17.4, -19.0], Stripe),
+        part([-0.24, 17.0, -42.0], [0.24, 17.2, -26.0], Stripe),
+        part([-0.25, 15.0, -47.0], [0.25, 18.0, -46.5], Metal),
+        part([-3.0, 17.2, -47.0], [3.0, 17.4, -46.5], Rail),
+        part([-0.2, 15.0, -15.0], [0.2, 17.8, -14.6], Metal),
+        part([-0.5, 0.5, 79.0], [0.5, 1.0, 80.0], Beacon),
+        part([-0.5, 2.0, -80.0], [0.5, 2.5, -79.0], Beacon),
+    ]);
+    let mut armor = vec![
+        tapered([25.0, -8.5, -67.0], [31.0, -5.5, -12.0], Panel, 0.65, 0.85),
+        tapered([22.0, -0.5, -66.0], [27.0, 3.0, -12.0], Panel, 0.65, 0.8),
+        part([13.0, 7.4, -29.0], [21.2, 8.5, -9.0], Panel),
+        part([13.1, 5.2, -29.0], [13.3, 5.4, 28.0], Stripe),
+        part([39.5, 6.2, -70.0], [40.5, 6.4, -30.0], Stripe),
+        part([47.0, 3.6, -31.0], [48.0, 4.2, -29.0], Beacon),
+        tapered([42.0, 2.6, -38.0], [48.0, 3.6, -28.0], Panel, 1.0, 0.9),
+        // Engine nacelles, with rectangular nozzle rings around the blue throat.
+        tapered([33.0, -7.0, -78.5], [47.0, 5.0, -48.0], Panel, 0.8, 0.9),
+        part([35.0, -5.0, -80.0], [45.0, 3.0, -79.6], Engine),
+        part([34.0, -6.0, -80.0], [46.0, -5.0, -78.5], Engine),
+        part([34.0, 3.0, -80.0], [46.0, 4.0, -78.5], Engine),
+        part([34.0, -5.0, -80.0], [35.0, 3.0, -78.5], Engine),
+        part([45.0, -5.0, -80.0], [46.0, 3.0, -78.5], Engine),
+    ];
+    for (z, roof) in [(-58.0, 13.0), (-50.0, 13.0), (-12.0, 13.0), (6.0, 13.0), (18.0, 10.0), (26.0, 10.0)] {
+        armor.push(part([4.5, roof, z], [6.0, roof + 0.6, z + 0.7], Panel));
+    }
+    parts.extend(armor.iter().copied());
+    parts.extend(armor.into_iter().map(mirrored));
+    let (low, high) = closed_ramp();
+    parts.push(part(low.to_array(), high.to_array(), Panel));
     parts.extend(turret_mounts().iter().map(|m| {
         part(
             [m[0] - 2.0, m[1], m[2] - 2.0],
@@ -313,6 +398,25 @@ const fn doorway(min: [f64; 2], max: [f64; 2]) -> Room {
     }
 }
 
+const fn upper_room(kind: RoomKind, min: [f64; 2], max: [f64; 2], entry: [f64; 2]) -> Room {
+    Room {
+        kind,
+        min: DVec3::new(min[0], UPPER_DECK, min[1]),
+        max: DVec3::new(max[0], UPPER_CEILING, max[1]),
+        entry: DVec3::new(entry[0], UPPER_DECK, entry[1]),
+    }
+}
+
+/// Upper doors have the same clearance above their floor as lower doors.
+const fn upper_doorway(min: [f64; 2], max: [f64; 2]) -> Room {
+    Room {
+        kind: RoomKind::Doorway,
+        min: DVec3::new(min[0], UPPER_DECK, min[1]),
+        max: DVec3::new(max[0], UPPER_DECK + LINTEL - DECK, max[1]),
+        entry: DVec3::new((min[0] + max[0]) / 2.0, UPPER_DECK, (min[1] + max[1]) / 2.0),
+    }
+}
+
 /// A room with a door in the spine's left wall, and its twin on the right.
 fn off_the_spine(kind: RoomKind, right: RoomKind, near: f64, far: f64, wide: f64, door: f64) -> [Room; 4] {
     let (middle, entry) = ((near + far) / 2.0, (3.0 + wide) / 2.0);
@@ -335,14 +439,14 @@ fn rooms() -> Vec<Room> {
         Room {
             kind: Reactor,
             min: DVec3::new(-20.0, -9.0, -30.0),
-            max: DVec3::new(20.0, 4.0, -8.0),
+            max: DVec3::new(20.0, UPPER_CEILING, -8.0),
             entry: DVec3::new(0.0, DECK, -19.0),
         },
         doorway([-1.5, -30.5], [1.5, -30.0]),
         room(Corridor, [-2.5, -42.0], [2.5, -30.5], [0.0, -36.0]),
         doorway([-2.0, -44.0], [2.0, -42.0]),
         Room {
-            kind: Cargo,
+            kind: Hangar,
             min: DVec3::new(-26.0, DECK, -64.0),
             max: DVec3::new(26.0, 4.0, -44.0),
             entry: DVec3::new(0.0, DECK, -46.0),
@@ -358,7 +462,34 @@ fn rooms() -> Vec<Room> {
     ];
     rooms.extend(off_the_spine(Weapons, Weapons, 2.0, 20.0, 16.0, 11.0));
     rooms.extend(off_the_spine(Quarters, Mess, 24.0, 38.0, 12.0, 31.0));
+    rooms.extend([
+        upper_room(Corridor, [-2.5, -8.0], [2.5, 30.0], [2.0, 20.0]),
+        upper_room(Corridor, [-2.5, -42.0], [2.5, -30.0], [2.0, -36.0]),
+        upper_room(Captain, [3.0, 16.0], [12.0, 30.0], [7.0, 23.0]),
+        upper_doorway([2.5, 21.0], [3.0, 24.0]),
+        upper_room(Arsenal, [3.0, -6.0], [12.0, 14.0], [7.0, 4.0]),
+        upper_doorway([2.5, 2.5], [3.0, 5.5]),
+        upper_room(Gym, [-12.0, -6.0], [-3.0, 30.0], [-7.0, 4.0]),
+        upper_doorway([-3.0, 2.5], [-2.5, 5.5]),
+        // Four balcony strips leave the reactor pit open to the roof.
+        upper_room(Gallery, [-20.0, -30.0], [20.0, -26.0], [0.0, -29.0]),
+        upper_room(Gallery, [-20.0, -26.0], [-17.0, -11.0], [-19.0, -19.0]),
+        upper_room(Gallery, [17.0, -26.0], [20.0, -11.0], [19.0, -19.0]),
+        upper_room(Gallery, [-20.0, -11.0], [20.0, -8.0], [2.0, -9.0]),
+        Room { kind: Stairwell, min: DVec3::new(-4.3, DECK, 14.0),
+            max: DVec3::new(-2.7, UPPER_CEILING, 28.5), entry: DVec3::new(-4.0, DECK, 14.0) },
+        Room { kind: Stairwell, min: DVec3::new(2.7, DECK, -26.5),
+            max: DVec3::new(5.3, UPPER_CEILING, -12.0), entry: DVec3::new(4.0, DECK, -12.0) },
+        Room { kind: Stairwell, min: DVec3::new(-1.3, UPPER_DECK, -18.5),
+            max: DVec3::new(1.3, 15.0, -4.0), entry: DVec3::new(0.0, UPPER_DECK, -4.0) },
+        Room { kind: Dome, min: DVec3::new(-6.0, 10.0, -24.0),
+            max: DVec3::new(6.0, 15.0, -18.0), entry: DVec3::new(0.0, 10.0, -21.0) },
+    ]);
     rooms
+}
+
+fn closed_ramp() -> (DVec3, DVec3) {
+    (DVec3::new(-8.0, -14.3, -61.0), DVec3::new(8.0, -13.9, -49.0))
 }
 
 /// Where the turrets stand, on the upper deck: x, the deck's height, z.
@@ -428,6 +559,91 @@ impl ShipLayout {
         DVec3::new(48.0, 18.0, 80.0)
     }
 
+    pub const RAMP_HEIGHT: f64 = RAMP_HEIGHT;
+    pub const RAMP_SECONDS: f64 = RAMP_SECONDS;
+
+    pub fn ramp_target(height_above_ground: f64) -> f64 {
+        ramp_target(height_above_ground)
+    }
+
+    pub fn ramp_step(open: f64, target: f64, dt: f64) -> f64 {
+        ramp_step(open, target, dt)
+    }
+
+    /// The hangar's belly ramp, closed, below the room air.
+    pub fn ramp(&self) -> (DVec3, DVec3) {
+        closed_ramp()
+    }
+
+    pub fn ramp_pose(&self, open: f64) -> (DVec3, DVec3, DVec3) {
+        let (ramp_min, ramp_max) = self.ramp();
+        let belly_y = ramp_min.y;
+        let mut hangar_y = DECK;
+        for r in &self.rooms {
+            if r.kind == RoomKind::Hangar {
+                hangar_y = r.min.y;
+                break;
+            }
+        }
+        let open = if open.is_finite() {
+            open.clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let top_y = belly_y + open * (hangar_y - belly_y);
+        let bottom_y = belly_y - open * 10.0;
+        let top_end = DVec3::new(0.0, top_y, ramp_max.z);
+        let bottom_end = DVec3::new(0.0, bottom_y, ramp_min.z);
+        let half_width = DVec3::new((ramp_max.x - ramp_min.x) / 2.0, 0.0, 0.0);
+        (top_end, bottom_end, half_width)
+    }
+
+    pub fn on_ramp(&self, open: f64, at: DVec3) -> bool {
+        if !open.is_finite() || !at.is_finite() || open <= 0.5 {
+            return false;
+        }
+        let (top, bottom, half_w) = self.ramp_pose(open);
+        let half_x = half_w.x.abs();
+        if at.x < -half_x || at.x > half_x {
+            return false;
+        }
+        let min_z = bottom.z.min(top.z);
+        let max_z = bottom.z.max(top.z);
+        if at.z < min_z || at.z > max_z {
+            return false;
+        }
+        let t = (at.z - top.z) / (bottom.z - top.z);
+        let surface_y = top.y + t * (bottom.y - top.y);
+        at.y >= surface_y - 0.05 && at.y <= surface_y + 0.6
+    }
+
+    pub fn ramp_exit(&self, open: f64, at: DVec3) -> bool {
+        if !open.is_finite() || !at.is_finite() || open <= 0.9 {
+            return false;
+        }
+        let (top, bottom, half_w) = self.ramp_pose(open);
+        let half_x = half_w.x.abs();
+        if at.x < -half_x || at.x > half_x {
+            return false;
+        }
+        let min_z = bottom.z.min(top.z);
+        if at.z < min_z - 0.1 || at.z > min_z + 1.5 {
+            return false;
+        }
+        let t = (at.z - top.z) / (bottom.z - top.z);
+        let surface_y = top.y + t * (bottom.y - top.y);
+        at.y >= surface_y - 0.05 && at.y <= surface_y + 0.6
+    }
+
+    pub fn ramp_rider_inside(&self) -> DVec3 {
+        for r in &self.rooms {
+            if r.kind == RoomKind::Hangar {
+                return r.entry;
+            }
+        }
+        DVec3::new(0.0, DECK, -46.0)
+    }
+
     pub fn room(&self, kind: RoomKind) -> Option<&Room> {
         self.rooms.iter().find(|r| r.kind == kind)
     }
@@ -459,6 +675,10 @@ impl ShipLayout {
 
     /// The same for a body of this radius, which rests on what its edge reaches.
     pub fn standing_height(&self, x: f64, z: f64, radius: f64, from_y: f64) -> Option<f64> {
+        // A stairwell opens through higher room floors. Keeping an invisible
+        // upper floor here would let someone climb the treads but never descend.
+        let shaft = self.rooms.iter().find(|r| r.kind == RoomKind::Stairwell
+            && (r.min.x..=r.max.x).contains(&x) && (r.min.z..=r.max.z).contains(&z));
         let room = self
             .rooms
             .iter()
@@ -466,6 +686,7 @@ impl ShipLayout {
                 (r.min.x..=r.max.x).contains(&x)
                     && (r.min.z..=r.max.z).contains(&z)
                     && r.min.y <= from_y
+                    && !shaft.is_some_and(|s| s.min.y < r.min.y && r.min.y < s.max.y)
             })
             .map(|r| r.min.y)
             .max_by(f64::total_cmp)?;

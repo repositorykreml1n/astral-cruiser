@@ -1,13 +1,27 @@
 // A short tutorial, as pages of the game's own dialog screen. Its buttons run
 // /astral tutorial N; the text names the keys the player has actually chosen.
-use super::astral_panel::quoted;
+#[allow(dead_code)]
+fn quoted(text: &str) -> String {
+    let inner: String = text
+        .chars()
+        .flat_map(|c| match c {
+            '"' | '\\' => vec!['\\', c],
+            c => vec![c],
+        })
+        .collect();
+    format!("\"{inner}\"")
+}
 
+#[allow(dead_code)]
 pub const PAGES: usize = 5;
 
+#[allow(dead_code)]
 const WIDTH: u32 = 320;
+#[allow(dead_code)]
 const BUTTON: u32 = 104;
 
 /// The player's keys, as they should read.
+#[allow(dead_code)]
 pub struct Keys {
     pub seat: String,
     pub panel: String,
@@ -22,6 +36,7 @@ pub fn key_name(key: &str) -> String {
     name.replace('.', " ").to_uppercase()
 }
 
+#[allow(dead_code)]
 fn page_text(page: usize, russian: bool, k: &Keys) -> (&'static str, String) {
     let (panel, seat, stop, help) = (&k.panel, &k.seat, &k.stop, &k.help);
     let [one, two, three, four] = &k.guns;
@@ -55,12 +70,14 @@ fn page_text(page: usize, russian: bool, k: &Keys) -> (&'static str, String) {
     }
 }
 
+#[allow(dead_code)]
 fn goes_to(label: &str, page: usize) -> String {
     let command = quoted(&format!("astral tutorial {page}"));
     format!("{{label:{},width:{BUTTON},action:{{type:\"run_command\",command:{command}}}}}", quoted(label))
 }
 
 /// A page, in the game's text form for tags.
+#[allow(dead_code)]
 pub fn dialog(page: usize, russian: bool, keys: &Keys) -> String {
     let page = page.min(PAGES - 1);
     let (title, text) = page_text(page, russian, keys);

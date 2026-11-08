@@ -255,6 +255,34 @@ pub fn chase_behind(past: f64, usual: f64) -> f64 {
     usual + (CHASE_THROUGH - usual) * share
 }
 
+/// The least chunk radius of the far side a portal shows.
+const LEAST_SCENE_RADIUS: i32 = 14;
+
+/// How many chunks round the exit the far side holds: the whole render distance
+/// and one more, so the game finds everything it draws there already in place.
+pub fn scene_radius(render_distance: i32) -> i32 {
+    (render_distance + 1).max(LEAST_SCENE_RADIUS)
+}
+
+/// Whether the far side as the window holds it can become the game's own level at
+/// the crossing: the same dimension, a portal still open, and every chunk the game
+/// draws round the exit inside it.
+pub fn adoption_ok(
+    scene_dim: Dimension,
+    target_dim: Dimension,
+    scene_area: ((i32, i32), i32),
+    exit_chunk: (i32, i32),
+    render_distance: i32,
+    closing: bool,
+) -> bool {
+    let ((cx, cz), radius) = scene_area;
+    let reach = radius - render_distance;
+    scene_dim == target_dim
+        && !closing
+        && (exit_chunk.0 - cx).abs() <= reach
+        && (exit_chunk.1 - cz).abs() <= reach
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum PassStage {
     /// The far side is loading.

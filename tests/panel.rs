@@ -119,3 +119,18 @@ fn the_tutorial_is_a_button_away_wherever_the_player_stands() {
 fn the_ships_own_view_is_not_on_the_panel() {
     assert!(!dialog(&aboard()).contains("astral view"));
 }
+
+#[test]
+fn panel_has_orbit_button_and_strike_fields() {
+    let text = dialog(&aboard());
+    assert!(text.contains("command:\"astral orbit\""), "{text}");
+    for kind in ["ion", "barrage", "rod", "lance"] {
+        assert!(text.contains(&format!("astral strike {kind} $(x) $(z)")), "{kind}: {text}");
+    }
+}
+
+#[test]
+fn no_strikes_from_outside_the_ship() {
+    let text = dialog(&PanelState { place: Place::Outside, ..aboard() });
+    assert!(!text.contains("astral strike") && !text.contains("astral orbit"), "{text}");
+}

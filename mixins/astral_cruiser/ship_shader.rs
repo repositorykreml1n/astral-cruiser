@@ -25,6 +25,11 @@ struct Ship {
     turrets: array<vec4<f32>, 8>,
     // A portal's plane from the camera: what lies past it is in the other world.
     clip: vec4<f32>,
+    // Eight camera-relative xyz/radius, rgb/strength pairs.
+    lights: array<vec4<f32>, 16>,
+    time: f32,
+    thrust: f32,
+    padding: vec2<f32>,
 }
 @group(0) @binding(0) var<uniform> globals: Globals;
 @group(0) @binding(1) var<uniform> ship: Ship;
@@ -111,6 +116,7 @@ fn base_color(material: u32) -> vec3<f32> {
     switch material {
         case 0u: { return vec3<f32>(0.20, 0.22, 0.26); }
         case 1u: { return vec3<f32>(0.13, 0.15, 0.19); }
+        case 26u: { return vec3<f32>(0.20, 0.22, 0.26); }
         default: { return vec3<f32>(0.30, 0.33, 0.37); }
     }
 }
@@ -135,12 +141,61 @@ fn windows(local: vec3<f32>) -> f32 {
     return mix(on, 0.09, clamp(max(w.x, w.y) * 1.6, 0.0, 1.0));
 }
 
+// The light vectors and rotated normal share the camera-relative world axes.
+fn explosion_light(in: Out) -> vec3<f32> {
+    let normal = normalize((ship.rotation * vec4<f32>(in.normal, 0.0)).xyz);
+    var light = vec3<f32>(0.0);
+    for (var i = 0u; i < 8u; i += 1u) {
+        let position = ship.lights[i * 2u];
+        let color = ship.lights[i * 2u + 1u];
+        if position.w > 0.0 && color.w > 0.0 {
+            let to = position.xyz - in.relative;
+            let d2 = dot(to, to);
+            let r2 = position.w * position.w;
+            if d2 > 4.0 * r2 { continue; }
+            let lambert = max(dot(normal, to * inverseSqrt(max(d2, 0.0001))), 0.0);
+            light += color.rgb * color.w * lambert / (1.0 + d2 / r2);
+        }
+    }
+    // Bound the combined intensity while preserving the brightest light's hue.
+    return light * min(1.0, 0.6 / max(max(light.r, light.g), max(light.b, 0.0001)));
+}
+
 fn finish(color: vec3<f32>, in: Out, emission: f32) -> vec3<f32> {
     let spherical = length(in.relative);
     let cylindrical = max(length(in.relative.xz), abs(in.relative.y));
     let f = max(fog_share(spherical, globals.fog.x, globals.fog.y),
                 fog_share(cylindrical, globals.fog.z, globals.fog.w));
-    return mix(color, globals.fog_color.rgb, f * globals.fog_color.a * (1.0 - emission * 0.7) * ship.glow.z);
+    return mix(color + explosion_light(in), globals.fog_color.rgb, f * globals.fog_color.a * (1.0 - emission * 0.7) * ship.glow.z);
+}
+
+// A 3x5 stencil, row-major bits, top row first. The fourth column is spacing.
+fn hull_number(p: vec2<f32>) -> f32 {
+    if p.x < 0.0 || p.x >= 19.0 || p.y < 0.0 || p.y >= 5.0 { return 0.0; }
+    let column = u32(floor(p.x)) % 4u;
+    if column == 3u { return 0.0; }
+    var glyph = 0u;
+    switch u32(floor(p.x / 4.0)) {
+        case 0u: { glyph = 23530u; } // A: 010 101 111 101 101
+        case 1u: { glyph = 29263u; } // C: 111 100 100 100 111
+        case 2u: { glyph = 448u; }   // -: 000 000 111 000 000
+        case 3u: { glyph = 31599u; } // 0: 111 101 101 101 111
+        case 4u: { glyph = 29843u; } // 1: 110 010 010 010 111
+        default: {}
+    }
+    return f32((glyph >> (u32(floor(p.y)) * 3u + column)) & 1u);
+}
+
+fn hull_marks(p: vec3<f32>, normal: vec3<f32>) -> f32 {
+    if abs(normal.x) < 0.6 || abs(p.x) < 20.0 { return 0.0; }
+    // Both sides read left to right from outside. Forward of the nacelles keeps
+    // the number visible instead of hiding it behind their overlapping hulls.
+    let h = -sign(p.x) * (p.z + 7.0);
+    let number = hull_number(vec2<f32>((h + 4.94) / 0.52, (-5.7 - p.y) / 0.52));
+    let v = abs(p.y + 7.0);
+    let chevron = 1.0 - smoothstep(0.18, 0.3, abs(fract((h - 7.0 - v) / 2.5) * 2.5 - 0.5));
+    let bounds = step(7.0, h) * step(h, 13.0) * step(v, 1.2);
+    return max(number, chevron * bounds);
 }
 
 // The colour of the light in each part of the ship.
@@ -335,8 +390,26 @@ fn interior(in: Out) -> vec3<f32> {
         let plates = vec3<f32>(0.25, 0.28, 0.32) * (0.75 + 0.25 * seams(surface(in.local, in.normal), 0.8));
         return vec4<f32>(finish(lit(plates, normal), in, 0.0), 1.0);
     }
-    if in.material >= 7u {
-        return vec4<f32>(interior(in), 1.0);
+    if in.material >= 7u && in.material <= 22u {
+        return vec4<f32>(interior(in) + explosion_light(in) * 0.25, 1.0);
+    }
+    if in.material == 24u {
+        let pulse = 0.65 + 0.35 * sin(6.2831853 * (in.local.z / 32.0 - ship.time / 3.0));
+        return vec4<f32>(finish(vec3<f32>(0.55, 0.85, 1.0) * pulse, in, 1.0), 1.0);
+    }
+    if in.material == 25u {
+        let end = abs(in.local.z) > 70.0;
+        var tint = select(vec3<f32>(0.1, 1.0, 0.2), vec3<f32>(1.0, 0.08, 0.04), in.local.x > 0.0);
+        if end { tint = vec3<f32>(1.0); }
+        let blink = select(0.0, 1.0, fract(ship.time * select(1.0, 2.0, end)) < 0.15);
+        return vec4<f32>(finish(tint * blink, in, blink), 1.0);
+    }
+    if in.material == 26u {
+        let uv = surface(in.local, in.normal);
+        let shade = 0.94 + 0.12 * hash(floor(uv / 4.0));
+        var paint = base_color(26u) * shade * (0.45 + 0.55 * seams(uv, 4.0));
+        paint = mix(paint, vec3<f32>(0.72, 0.76, 0.8), hull_marks(in.local, in.normal));
+        return vec4<f32>(finish(lit(paint, normal), in, 0.0), 1.0);
     }
     if in.material == 3u {
         let pulse = 0.9 + 0.1 * sin(ship.glow.y * 2.0 + in.local.z * 0.08);
@@ -348,13 +421,13 @@ fn interior(in: Out) -> vec3<f32> {
         let ribs = 0.45 + 0.55 * seams(surface(in.local, in.normal), 2.0);
         let pulse = 0.8 + 0.2 * sin(ship.glow.y * 3.0);
         let energy = mix(vec3<f32>(0.02, 0.3, 0.28), vec3<f32>(0.6, 1.0, 0.92), flow * flow);
-        return vec4<f32>(energy * ribs * pulse, 1.0);
+        return vec4<f32>(energy * ribs * pulse + explosion_light(in), 1.0);
     }
     if in.material == 5u {
-        let power = 0.72 + 0.28 * ship.glow.x;
-        let flicker = 0.96 + 0.04 * sin(ship.glow.y * 37.0);
+        let power = 0.2 + 1.8 * ship.thrust;
+        let flicker = 0.96 + 0.04 * sin(ship.time * 37.0);
         let bands = 0.9 + 0.1 * sin(surface(in.local, in.normal).x * 2.2);
-        let heart = mix(vec3<f32>(0.3, 0.72, 1.0), vec3<f32>(0.9, 0.98, 1.0), ship.glow.x);
+        let heart = vec3<f32>(0.3, 0.6, 1.0);
         return vec4<f32>(finish(heart * power * flicker * bands * 1.25, in, 1.0), 1.0);
     }
     let uv = surface(in.local, in.normal);
@@ -363,6 +436,9 @@ fn interior(in: Out) -> vec3<f32> {
     var color = base_color(in.material) * (0.82 + big * 0.26 + small * 0.1);
     color *= 0.55 + 0.45 * seams(uv, 9.0);
     color *= 0.8 + 0.2 * seams(uv, 3.0);
+    if in.material == 0u {
+        color = mix(color, vec3<f32>(0.72, 0.76, 0.8), hull_marks(in.local, in.normal));
+    }
     var shaded = lit(color, normal);
     var emission = 0.0;
     if abs(in.normal.x) > 0.5 && in.material == 0u {
@@ -429,9 +505,24 @@ struct BoltOut {
 
 // Light only adds: a soft body round a white-hot core.
 @fragment fn fs_bolt(in: BoltOut) -> @location(0) vec4<f32> {
+    if in.across.x > 1.5 { return vec4<f32>(in.color.rgb * in.color.a, 0.0); }
     let d = dot(in.across, in.across);
     let body = exp(-d * 5.0) - exp(-5.0);
     let core = exp(-d * 45.0);
     return vec4<f32>((in.color.rgb * body + vec3<f32>(core)) * in.color.a, 0.0);
 }
 "#;
+
+#[cfg(test)]
+#[test]
+fn ship_uniform_matches_upload_layout() {
+    let module = naga::front::wgsl::parse_str(SHADER).unwrap();
+    let (_, ty) = module.types.iter().find(|(_, ty)| ty.name.as_deref() == Some("Ship")).unwrap();
+    let naga::TypeInner::Struct { members, span } = &ty.inner else { panic!("Ship must be a struct") };
+    assert_eq!(*span, 512);
+    for (name, offset) in [("rotation", 0), ("offset", 64), ("glow", 80),
+        ("turrets", 96), ("clip", 224), ("lights", 240), ("time", 496), ("thrust", 500)] {
+        let member = members.iter().find(|m| m.name.as_deref() == Some(name)).unwrap();
+        assert_eq!(member.offset, offset, "{name} upload offset");
+    }
+}

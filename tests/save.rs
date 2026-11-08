@@ -1,10 +1,16 @@
+#[allow(dead_code, unused_imports)]
+#[path = "../mixins/astral_cruiser/lang.rs"]
+mod astral_lang;
+#[allow(dead_code, unused_imports)]
 #[path = "../mixins/astral_cruiser/core.rs"]
 mod astral_core;
+#[allow(dead_code, unused_imports)]
 #[path = "../mixins/astral_cruiser/save.rs"]
 mod astral_save;
 
 use astral_core::{Dimension, ShipPose};
-use astral_save::{SaveError, SaveState, Speeds};
+use astral_lang::LangSetting;
+use astral_save::{SaveError, SaveState, Speeds, TabletSave};
 use glam::{DQuat, DVec3};
 use std::{fs, path::PathBuf};
 
@@ -64,7 +70,27 @@ fn a_save_from_before_the_crew_was_kept_has_nobody_aboard() {
 fn a_save_from_before_the_guns_has_a_full_cold_battery() {
     let text = r#"{"version":1,"dimension":"end","position":[1,2,3],"rotation":[0,0,0,1]}"#;
     let loaded = SaveState::from_json(text).unwrap();
-    assert_eq!((loaded.energy, loaded.heat), (100.0, 0.0));
+    assert_eq!((loaded.energy, loaded.heat), (10_000.0, 0.0));
+}
+
+#[test]
+fn old_save_energy_scaled_up() {
+    let text = r#"{"version":1,"dimension":"end","position":[1,2,3],"rotation":[0,0,0,1],"energy":100.0}"#;
+    let loaded = SaveState::from_json(text).unwrap();
+    assert_eq!((loaded.energy, loaded.heat), (10_000.0, 0.0));
+
+    let text_part = r#"{"version":1,"dimension":"end","position":[1,2,3],"rotation":[0,0,0,1],"energy":42.5}"#;
+    let loaded_part = SaveState::from_json(text_part).unwrap();
+    assert_eq!((loaded_part.energy, loaded_part.heat), (4250.0, 0.0));
+
+    let text_over = r#"{"version":1,"dimension":"end","position":[1,2,3],"rotation":[0,0,0,1],"energy":150.0}"#;
+    let loaded_over = SaveState::from_json(text_over).unwrap();
+    assert_eq!((loaded_over.energy, loaded_over.heat), (10_000.0, 0.0));
+
+    let new_save = SaveState { energy: 42.5, ..state() };
+    let json = new_save.to_json();
+    let reloaded = SaveState::from_json(&json).unwrap();
+    assert_eq!(reloaded.energy, 42.5);
 }
 
 #[test]
@@ -138,4 +164,20 @@ fn speeds_that_are_no_numbers_fall_back() {
 fn a_save_from_before_speeds_has_the_usual_ones() {
     let old = r#"{"version":1,"dimension":"overworld","position":[0,70,0],"rotation":[0,0,0,1]}"#;
     assert_eq!(SaveState::from_json(old).unwrap().speeds, Speeds::default());
+}
+
+#[test]
+fn tablet_save_persists_lang_setting() {
+    let path = folder("tablet_lang").join("tablet.json");
+    let mut save = TabletSave::default();
+    assert_eq!(save.lang, LangSetting::Auto);
+    save.lang = LangSetting::Ru;
+    save.save_atomic(&path).unwrap();
+    let loaded = TabletSave::load(&path).unwrap();
+    assert_eq!(loaded.lang, LangSetting::Ru);
+
+    // Old json without lang defaults to Auto
+    let old_json = r#"{"waypoints":[],"shake":1.0,"volume":1.0,"onboarding":""}"#;
+    let old_loaded: TabletSave = serde_json::from_str(old_json).unwrap();
+    assert_eq!(old_loaded.lang, LangSetting::Auto);
 }

@@ -3,7 +3,7 @@
 // own, and the meshes and entity vertices go to the portal's Renderer.
 use super::{Dim, Game, Mob};
 use horizon_client::{
-    chunk::Chunk,
+    chunk::{Chunk, block_entity::BlockEntity},
     gfx::astral_portal as portal,
     mobs::MobType,
     streaming::{ChunkGenerator, Proto, Streaming},
@@ -34,9 +34,16 @@ struct Request {
     generation: u64,
 }
 
+/// A chunk of the far side as the server sends it, with its block entities: the
+/// chests, signs and banners it draws apart from the blocks.
+struct Arrival {
+    chunk: Arc<Chunk>,
+    block_entities: Vec<((i32, i32, i32), BlockEntity)>,
+}
+
 static GENERATION: AtomicU64 = AtomicU64::new(0);
 static REQUEST: Mutex<Option<Request>> = Mutex::new(None);
-static MAILBOX: Mutex<Vec<Arc<Chunk>>> = Mutex::new(Vec::new());
+static MAILBOX: Mutex<Vec<Arrival>> = Mutex::new(Vec::new());
 static MOBS: Mutex<Option<Vec<MobPose>>> = Mutex::new(None);
 
 fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -151,7 +158,19 @@ struct Scene {
     streaming: Streaming,
     mobs: Vec<Mob>,
     /// What has arrived and waits for its frame.
-    waiting: Vec<Arc<Chunk>>,
+    waiting: Vec<Arrival>,
+}
+
+impl Scene {
+    fn take_in(&mut self, arrival: Arrival) {
+        let chunk = Arc::try_unwrap(arrival.chunk).unwrap_or_else(|shared| (*shared).clone());
+        let column = (chunk.x, chunk.z);
+        self.world.block_entities.retain(|pos, _| (pos.0 >> 4, pos.2 >> 4) != column);
+        self.streaming.insert_remote(&mut self.world, chunk);
+        for (pos, entity) in arrival.block_entities {
+            self.world.block_entities.insert(pos, entity);
+        }
+    }
 }
 
 thread_local! {
@@ -209,9 +228,22 @@ pub(super) fn mirror(game: &mut Game<'_>) {
             }
         }
     });
-    if !fresh.is_empty() {
-        lock(&MAILBOX).append(&mut fresh);
+    if fresh.is_empty() {
+        return;
     }
+    // Block entities by column, once for all the columns that changed.
+    let mut by_column: HashMap<(i32, i32), Vec<((i32, i32, i32), BlockEntity)>> = HashMap::new();
+    for (pos, entity) in world.block_entities.iter() {
+        let column = (pos.0 >> 4, pos.2 >> 4);
+        if (column.0 - cx).abs() <= radius && (column.1 - cz).abs() <= radius {
+            by_column.entry(column).or_default().push((*pos, entity.clone()));
+        }
+    }
+    let arrivals = fresh.into_iter().map(|chunk| {
+        let block_entities = by_column.remove(&(chunk.x, chunk.z)).unwrap_or_default();
+        Arrival { chunk, block_entities }
+    });
+    lock(&MAILBOX).extend(arrivals);
 }
 
 /// Starts showing a far side: the server starts copying it, and a world for it
@@ -234,6 +266,47 @@ pub(super) fn open(game: &mut Game<'_>, dim: Dim, area: ((i32, i32), i32)) {
     });
     let generation = GENERATION.fetch_add(1, Ordering::Relaxed) + 1;
     *lock(&REQUEST) = Some(Request { dim, area, generation });
+}
+
+/// The dimension of the far side the window holds, and the chunks it covers.
+pub(super) fn shown() -> Option<(Dim, ((i32, i32), i32))> {
+    let area = lock(&REQUEST).map(|request| request.area)?;
+    SCENE.with_borrow(|slot| slot.as_ref().map(|scene| (scene.dim, area)))
+}
+
+/// The game has just changed level to the far side: its chunks, their light and
+/// block entities go over to the game's own world, and with `meshes_too` the
+/// meshes the portal's renderer made of them go to the game's renderer, so the
+/// level stands whole in the first frame. True if the meshes went over; false if
+/// the game makes them again from the chunks.
+pub(super) fn adopt(game: &mut Game<'_>) -> bool {
+    SCENE.with_borrow_mut(|slot| {
+        let Some(scene) = slot.as_mut().filter(|scene| scene.dim == game.dim) else {
+            return false;
+        };
+        // What came and was not drawn yet goes in as well, to be meshed here.
+        scene.waiting.append(&mut lock(&MAILBOX));
+        let arrived: Vec<Arrival> = scene.waiting.drain(..).collect();
+        for arrival in arrived {
+            scene.take_in(arrival);
+        }
+        let swapped = match game.renderer.as_mut() {
+            Some(main) => portal::adopt_far_side(main),
+            None => Err("no renderer"),
+        };
+        if let Err(why) = swapped {
+            log::warn!("astral cruiser: the far side's meshes stay behind: {why}");
+        }
+        let meshed = swapped.is_ok();
+        let taken = game.streaming.astral_take_columns(
+            &mut game.world,
+            &mut scene.streaming,
+            &mut scene.world,
+            meshed,
+        );
+        log::info!("astral cruiser: {taken} columns of the far side taken over, meshes kept: {meshed}");
+        meshed
+    })
 }
 
 pub(super) fn close() {
@@ -275,9 +348,9 @@ pub(super) fn update(game: &mut Game<'_>, pose: impl FnOnce(&Game<'_>, Dim) -> p
         }
         scene.waiting.append(&mut lock(&MAILBOX));
         let taken = scene.waiting.len().min(CHUNKS_A_FRAME);
-        for chunk in scene.waiting.drain(..taken) {
-            let chunk = Arc::try_unwrap(chunk).unwrap_or_else(|shared| (*shared).clone());
-            scene.streaming.insert_remote(&mut scene.world, chunk);
+        let arrived: Vec<Arrival> = scene.waiting.drain(..taken).collect();
+        for arrival in arrived {
+            scene.take_in(arrival);
         }
         let (uploads, unloaded) = scene.streaming.update(&mut scene.world);
         portal::with_renderer(|renderer| {

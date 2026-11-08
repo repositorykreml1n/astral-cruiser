@@ -3,7 +3,7 @@
 // world pass with the terrain's depth, and reads the terrain's globals for the
 // camera, sun and fog; every surface detail comes from the shader, not a texture.
 use super::astral_hull::{
-    BOLT_VERTICES, Bolt, BoltVertex, HullVertex, Swirl, bolt_vertices, furniture_vertices,
+    BOLT_VERTICES, CUBE_VERTICES, LightCube, cube_vertices, Bolt, BoltVertex, HullVertex, Swirl, bolt_vertices, furniture_vertices,
     hull_vertices, interior_vertices, swirl_vertices, turret_vertices,
 };
 use super::astral_layout::{Material, ShipLayout};
@@ -12,7 +12,7 @@ use super::{Frame, Renderer};
 use glam::{DQuat, DVec3, Mat4};
 use std::cell::{Cell, RefCell};
 
-#[repr(C)]
+#[repr(C, align(16))]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct Uniform {
     rotation: [[f32; 4]; 4],
@@ -20,7 +20,19 @@ struct Uniform {
     glow: [f32; 4],
     turrets: [[f32; 4]; 8],
     clip: [f32; 4],
+    lights: [[f32; 4]; 16],
+    time: f32,
+    thrust: f32,
+    padding: [f32; 2],
 }
+
+// Keep the upload ABI in step with Ship in WGSL (including its final padding).
+const _: () = {
+    assert!(std::mem::size_of::<Uniform>() == 512);
+    assert!(std::mem::offset_of!(Uniform, lights) == 240);
+    assert!(std::mem::offset_of!(Uniform, time) == 496);
+    assert!(std::mem::offset_of!(Uniform, thrust) == 500);
+};
 
 /// Where to draw the ship this frame.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -47,6 +59,8 @@ struct Gpu {
     bolts: wgpu::Buffer,
     bolts_used: u32,
     swirl_used: u32,
+    guns: wgpu::Buffer,
+    guns_used: u32,
     vertices: wgpu::Buffer,
     solid: u32,
     total: u32,
@@ -66,6 +80,7 @@ enum Armed {
 
 thread_local! {
     static VIEW: Cell<Option<ShipView>> = const { Cell::new(None) };
+    static THRUST: Cell<f32> = const { Cell::new(0.3) };
     static GPU: RefCell<Option<Gpu>> = const { RefCell::new(None) };
     /// The same for the renderer of a portal's far side, on its own globals.
     static SECOND: RefCell<Option<Gpu>> = const { RefCell::new(None) };
@@ -75,6 +90,8 @@ thread_local! {
     static ARMED: Cell<Armed> = const { Cell::new(Armed::Not) };
     static CHASE: Cell<Option<DVec3>> = const { Cell::new(None) };
     static FAR_LEAD: Cell<Option<[f64; 2]>> = const { Cell::new(None) };
+    static GUNS: RefCell<Vec<HullVertex>> = const { RefCell::new(Vec::new()) };
+    static CUBES: RefCell<Vec<LightCube>> = const { RefCell::new(Vec::new()) };
     static BOLTS: RefCell<Vec<Bolt>> = const { RefCell::new(Vec::new()) };
     static SWIRL: Cell<Option<Swirl>> = const { Cell::new(None) };
     /// What the light of the frame is drawn from, once the hull is down.
@@ -83,8 +100,16 @@ thread_local! {
     static CLIP: Cell<Option<(DVec3, DVec3)>> = const { Cell::new(None) };
 }
 
+pub fn set_guns(vertices: Vec<HullVertex>) { GUNS.set(vertices); }
+pub fn set_cubes(cubes: Vec<LightCube>) { CUBES.set(cubes); }
+
 pub fn set_view(view: Option<ShipView>) {
     VIEW.set(view);
+}
+
+/// Nozzle brightness follows throttle; until set, the engines idle at 30%.
+pub fn set_thrust(thrust: f32) {
+    THRUST.set(if thrust.is_finite() { thrust.clamp(0.0, 1.0) } else { 0.3 });
 }
 
 /// This frame's shots.
@@ -321,10 +346,17 @@ fn build(main: &Renderer) -> Gpu {
         swirl: bolt_pipeline(main, &layout, &shader, "fs_swirl"),
         bolts: device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Astral bolts"),
-            size: (BOLT_VERTICES * std::mem::size_of::<BoltVertex>()) as u64,
+            size: ((BOLT_VERTICES + CUBE_VERTICES + 6) * std::mem::size_of::<BoltVertex>()) as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         }),
+        guns: device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Astral strike batteries"),
+            size: (8192 * std::mem::size_of::<HullVertex>()) as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        }),
+        guns_used: 0,
         bolts_used: 0,
         swirl_used: 0,
         vertices,
@@ -338,6 +370,9 @@ fn build(main: &Renderer) -> Gpu {
 
 /// Before the main renderer draws: this frame's transform.
 pub fn before_main(main: &mut Renderer, frame: &Frame<'_>) {
+    if SKIP_SECOND.get() || SECOND_SHIFT.get().is_some() {
+        super::astral_fx_gpu::skip_draw();
+    }
     ARMED.set(Armed::Not);
     if SKIP_SECOND.replace(false) {
         SECOND_SHIFT.take();
@@ -376,6 +411,18 @@ pub fn before_main(main: &mut Renderer, frame: &Frame<'_>) {
             ],
             turrets: view.turrets.map(|[turn, elevation]| [turn, elevation, 0.0, 0.0]),
             clip,
+            // Source-world explosions must not light the portal's destination.
+            lights: if shift.is_none() {
+                let lights = super::astral_fx_gpu::lights(frame.camera);
+                std::array::from_fn(|i| {
+                    let l = lights[i / 2];
+                    let j = (i % 2) * 4;
+                    [l[j], l[j + 1], l[j + 2], l[j + 3]]
+                })
+            } else { [[0.0; 4]; 16] },
+            time: super::astral_fx_gpu::now(),
+            thrust: THRUST.get(),
+            padding: [0.0; 2],
         };
         main.queue
             .write_buffer(&gpu.uniform, 0, bytemuck::bytes_of(&uniform));
@@ -384,6 +431,12 @@ pub fn before_main(main: &mut Renderer, frame: &Frame<'_>) {
         } else {
             BOLTS.with_borrow(|bolts| bolt_vertices(bolts, frame.camera))
         };
+        GUNS.with_borrow(|vertices| {
+            let count = vertices.len().min(8190);
+            gpu.guns_used = count as u32;
+            if count > 0 { main.queue.write_buffer(&gpu.guns, 0, bytemuck::cast_slice(&vertices[..count])); }
+        });
+        if shift.is_none() { CUBES.with_borrow(|cubes| light.extend(cube_vertices(cubes, frame.camera))); }
         gpu.bolts_used = light.len() as u32;
         if let Some(swirl) = SWIRL.get().filter(|_| shift.is_none()) {
             light.extend(swirl_vertices(&swirl, frame.camera));
@@ -412,6 +465,9 @@ pub fn draw(pass: &mut wgpu::RenderPass<'_>) {
             pass.draw(0..gpu.solid, 0..1);
             pass.set_pipeline(&gpu.glass);
             pass.draw(gpu.solid..gpu.total, 0..1);
+            pass.set_pipeline(&gpu.pipeline);
+            pass.set_vertex_buffer(0, gpu.guns.slice(..));
+            pass.draw(0..gpu.guns_used, 0..1);
         }
     });
 }

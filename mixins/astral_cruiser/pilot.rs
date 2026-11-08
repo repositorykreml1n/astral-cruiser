@@ -15,6 +15,20 @@ const RISE_PER_TICK: f64 = 1.5;
 /// The pilot's view: far enough back for the whole 160 long hull to fit the
 /// default view, and above it to see its decks.
 pub const CHASE_BEHIND: f64 = 176.0;
+/// How far under the hull's middle the orbit view hangs at the least zoom: clear
+/// of the belly, 18 under the middle.
+const ORBIT_EYE_BELOW: f64 = 30.0;
+/// How much further down the wheel takes the orbit view.
+pub const ORBIT_ZOOM_MAX: f64 = 240.0;
+/// How far over the top of the world the ship holds orbit.
+pub const ORBIT_Y_MARGIN: f64 = 8.0;
+
+/// The orbit view: an eye under the belly looking straight down, `zoom` blocks
+/// further down, so the ground under the ship fills the screen.
+pub fn orbit_camera(center: DVec3, zoom: f64) -> (DVec3, DVec3) {
+    let eye = center - DVec3::Y * (ORBIT_EYE_BELOW + zoom.clamp(0.0, ORBIT_ZOOM_MAX));
+    (eye, DVec3::NEG_Y)
+}
 const CHASE_ABOVE: f64 = 30.0;
 /// Where the view from the ship itself is taken: just off the nose, on its axis.
 pub const SHIP_EYE: DVec3 = DVec3::new(0.0, 1.0, 84.0);

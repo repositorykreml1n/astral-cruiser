@@ -75,14 +75,22 @@ thread_local! {
     static DRAW: RefCell<Option<Draw>> = const { RefCell::new(None) };
     static LAST_MS: Cell<f32> = const { Cell::new(0.0) };
     static OBLIQUE: Cell<Option<[f32; 4]>> = const { Cell::new(None) };
+    static SHAKE: Cell<Option<Mat4>> = const { Cell::new(None) };
     static ENTITIES: RefCell<Vec<Vertex>> = const { RefCell::new(Vec::new()) };
     static VIEW_CAMERA: Cell<DVec3> = const { Cell::new(DVec3::ZERO) };
+}
+
+pub fn set_shake(shake: Option<Mat4>) {
+    SHAKE.set(shake);
 }
 
 /// The projection of the far side's view with its near plane on the exit plane
 /// (Lengyel's oblique clipping, reversed Z), so nothing between the virtual
 /// camera and the exit shows.
 pub fn oblique(mut view: View) -> View {
+    if let Some(shake) = SHAKE.get() {
+        view.view = shake * view.view;
+    }
     if let Some(plane) = OBLIQUE.get() {
         let plane = Vec4::from_array(plane);
         let projection = view.projection;
@@ -322,6 +330,65 @@ pub fn with_renderer(f: impl FnOnce(&mut Renderer)) {
             f(&mut gpu.renderer);
         }
     });
+}
+
+/// Hands the far side's meshes to the main renderer and takes the main one's in
+/// return, so a crossing finds the far side drawn already. False, with nothing
+/// changed, when there is no far side or the two renderers do not match.
+pub fn adopt_far_side(main: &mut Renderer) -> Result<(), &'static str> {
+    GPU.with_borrow_mut(|gpu| match gpu.as_mut() {
+        Some(gpu) => main.astral_swap_sections(&mut gpu.renderer),
+        None => Err("no far side renderer"),
+    })
+}
+
+impl Renderer {
+    /// Swaps everything that holds this renderer's chunk meshes with `other`'s.
+    /// Both are on one device, so their buffers serve either; pipelines, targets
+    /// and bind groups built for one stay with it, and the flat draws' bind
+    /// groups are rebuilt on their next use.
+    pub fn astral_swap_sections(&mut self, other: &mut Renderer) -> Result<(), &'static str> {
+        if self.layout != other.layout {
+            return Err("the column layouts differ");
+        }
+        if self.flat_on != other.flat_on || self.flat.is_some() != other.flat.is_some() {
+            return Err("one draws flat and the other does not");
+        }
+        if let (Some(mine), Some(theirs)) = (&mut self.flat, &mut other.flat) {
+            mine.astral_swap_tables(theirs);
+        }
+        std::mem::swap(&mut self.sections, &mut other.sections);
+        std::mem::swap(&mut self.arena, &mut other.arena);
+        std::mem::swap(&mut self.indices, &mut other.indices);
+        std::mem::swap(&mut self.index_quads, &mut other.index_quads);
+        std::mem::swap(&mut self.sorted_indices, &mut other.sorted_indices);
+        std::mem::swap(&mut self.translucent_sorter, &mut other.translucent_sorter);
+        std::mem::swap(&mut self.translucency_cursor, &mut other.translucency_cursor);
+        std::mem::swap(&mut self.block_entities, &mut other.block_entities);
+        std::mem::swap(&mut self.section_uploaded, &mut other.section_uploaded);
+        std::mem::swap(&mut self.occlusion, &mut other.occlusion);
+        std::mem::swap(&mut self.detail_columns, &mut other.detail_columns);
+        std::mem::swap(&mut self.lods, &mut other.lods);
+        std::mem::swap(&mut self.lod_cutout, &mut other.lod_cutout);
+        std::mem::swap(&mut self.lod_retiring, &mut other.lod_retiring);
+        std::mem::swap(&mut self.lod_leaving, &mut other.lod_leaving);
+        std::mem::swap(&mut self.lod_pending, &mut other.lod_pending);
+        // Copies into the arena not yet submitted go with the arena they fill.
+        std::mem::swap(&mut self.section_uploads, &mut other.section_uploads);
+        std::mem::swap(&mut self.section_copies, &mut other.section_copies);
+        std::mem::swap(&mut self.section_copy_bytes, &mut other.section_copy_bytes);
+        for renderer in [&mut *self, &mut *other] {
+            renderer.detail_revision += 1;
+            renderer.block_entity_revision = super::next_block_entity_revision();
+            renderer.visible.clear();
+            renderer.visible_lods.clear();
+            renderer.shadow_visible.clear();
+            renderer.translucent_draws.clear();
+            renderer.draws.clear();
+            renderer.draw_pages.clear();
+        }
+        Ok(())
+    }
 }
 
 pub fn last_ms() -> f32 {
